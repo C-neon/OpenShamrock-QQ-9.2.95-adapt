@@ -25,6 +25,8 @@ the same GPL-3.0-or-later terms as the upstream project.
 - Adapted QQNT listener interfaces for QQ `9.2.95`.
 - Added minimal runtime type stubs required by QQ `9.2.95` listener signatures.
 - Updated Shamrock listener overrides to match the newer QQ runtime interfaces.
+- Updated QQNT message service contact references for the `Contact` package move
+  in QQ `9.2.95`.
 - Added an Xposed entry log marker for the QQ `9.2.95` adaptation build.
 
 This fork is provided for learning, research, and self-owned device testing only.

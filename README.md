@@ -4,8 +4,8 @@ This repository is a local OpenShamrock adaptation for QQ `9.2.95`
 (versionCode `14200`).
 
 The purpose of this fork is narrow: keep Shamrock loading on QQ `9.2.95` and
-keep the OneBot reverse WebSocket path usable for AstrBot testing. It is not an
-official OpenShamrock release.
+keep the OneBot HTTP and reverse WebSocket paths usable for local bot testing.
+It is not an official OpenShamrock release.
 
 ## Source
 
@@ -26,10 +26,12 @@ and [LICENSE](LICENSE).
 - Matched `IKernelMsgListener` to the QQ `9.2.95` runtime interface.
 - Added the minimal QQNT interface types required by those listener signatures.
 - Updated Shamrock listener overrides for the newer QQ runtime.
+- Updated QQNT message service contact references for QQ `9.2.95`, where
+  `Contact` is exposed from `com.tencent.qqnt.kernelpublic.nativeinterface`.
 - Added an Xposed entry log marker for this QQ `9.2.95` build.
 
-These changes target startup and listener compatibility. They do not claim broad
-QQ version support.
+These changes target QQ `9.2.95` startup, inbound event, and message send
+compatibility. They do not claim broad QQ version support.
 
 ## Tested Setup
 
@@ -38,7 +40,7 @@ Tested locally with:
 - Device: Redmi K50 Pro
 - Android environment: Magisk and LSPosed
 - QQ: `9.2.95`
-- Shamrock build: `v1.0.8.r318.238b954`
+- Shamrock build: local arm64 debug build from this branch
 - Bot side: AstrBot with OneBot v11 reverse WebSocket
 
 Observed checks:
@@ -48,8 +50,11 @@ Observed checks:
 - `logcat` no longer shows the earlier `AbstractMethodError`, `JNI FatalError`,
   or `QQCrashHandleListener` crash path.
 - Shamrock connects to AstrBot with `WebSocketClient onOpen: 101`.
-- AstrBot reports `aiocqhttp(OneBot v11) adapter connected` and receives real
-  QQ group message events.
+- AstrBot reports `aiocqhttp(OneBot v11) adapter connected`.
+- Real QQ group message events reach AstrBot.
+- OneBot HTTP `/send_group_msg` and `/send_private_msg` return `retcode=0`.
+- OneBot HTTP `/get_msg` can read back the sent group and private messages by
+  `message_id`.
 
 ## Build
 
@@ -62,7 +67,7 @@ env JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home bas
 Expected APK path:
 
 ```text
-app/build/outputs/apk/arm64/debug/Shamrock-v1.0.8.r318.238b954-arm64.apk
+app/build/outputs/apk/arm64/debug/Shamrock-v*-arm64.apk
 ```
 
 ## Known Limits
@@ -71,6 +76,8 @@ app/build/outputs/apk/arm64/debug/Shamrock-v1.0.8.r318.238b954-arm64.apk
 - QQ updates may change listener signatures again.
 - LSPosed, Android, or upstream Shamrock changes may require another pass.
 - This fork is for learning, research, and self-owned device testing.
+- Some information APIs still depend on QQ internals that changed in `9.2.95`;
+  for example, friend or group metadata calls may require separate adaptation.
 
 ## License
 
