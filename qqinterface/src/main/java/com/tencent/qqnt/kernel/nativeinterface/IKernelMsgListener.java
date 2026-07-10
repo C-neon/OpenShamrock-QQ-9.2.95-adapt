@@ -1,52 +1,35 @@
 package com.tencent.qqnt.kernel.nativeinterface;
 
+import com.tencent.qqnt.kernelpublic.nativeinterface.Contact;
 import java.util.ArrayList;
 import java.util.HashMap;
 
 public interface IKernelMsgListener {
     void onAddSendMsg(MsgRecord msgRecord);
 
-    void onBroadcastHelperDownloadComplete(BroadcastHelperTransNotifyInfo broadcastHelperTransNotifyInfo);
+    void onBusinessNotification(ArrayList<BusinessNotification> arrayList);
 
-    void onBroadcastHelperProgerssUpdate(BroadcastHelperTransNotifyInfo broadcastHelperTransNotifyInfo);
-
-    void onChannelFreqLimitInfoUpdate(Contact contact, boolean z, FreqLimitInfo freqLimitInfo);
-
-    void onContactUnreadCntUpdate(HashMap<Integer, HashMap<String, UnreadCntInfo>> hashMap);
+    void onContactUnreadCntUpdate(HashMap<Integer, HashMap<String, UnreadCntInfo>> map);
 
     void onCustomWithdrawConfigUpdate(CustomWithdrawConfig customWithdrawConfig);
 
-    void onDraftUpdate(Contact contact, ArrayList<MsgElement> arrayList, long j2);
+    void onDraftUpdate(Contact contact, ArrayList<MsgElement> arrayList, long j16);
 
     void onEmojiDownloadComplete(EmojiNotifyInfo emojiNotifyInfo);
 
     void onEmojiResourceUpdate(EmojiResourceInfo emojiResourceInfo);
 
-    void onFeedEventUpdate(FirstViewDirectMsgNotifyInfo firstViewDirectMsgNotifyInfo);
-
     void onFileMsgCome(ArrayList<MsgRecord> arrayList);
 
-    void onFirstViewDirectMsgUpdate(FirstViewDirectMsgNotifyInfo firstViewDirectMsgNotifyInfo);
-
-    void onFirstViewGroupGuildMapping(ArrayList<FirstViewGroupGuildInfo> arrayList);
-
-    void onGrabPasswordRedBag(int i2, String str, int i3, RecvdOrder recvdOrder, MsgRecord msgRecord);
+    void onGrabPasswordRedBag(int i16, String str, int i17, RecvdOrder recvdOrder, MsgRecord msgRecord);
 
     void onGroupFileInfoAdd(GroupItem groupItem);
 
     void onGroupFileInfoUpdate(GroupFileListResult groupFileListResult);
 
-    void onGroupGuildUpdate(GroupGuildNotifyInfo groupGuildNotifyInfo);
-
     void onGroupTransferInfoAdd(GroupItem groupItem);
 
     void onGroupTransferInfoUpdate(GroupFileListResult groupFileListResult);
-
-    void onGuildInteractiveUpdate(GuildInteractiveNotificationItem guildInteractiveNotificationItem);
-
-    void onGuildMsgAbFlagChanged(GuildMsgAbFlag guildMsgAbFlag);
-
-    void onGuildNotificationAbstractUpdate(GuildNotificationAbstractInfo guildNotificationAbstractInfo);
 
     void onHitCsRelatedEmojiResult(DownloadRelateEmojiResultInfo downloadRelateEmojiResultInfo);
 
@@ -62,49 +45,45 @@ public interface IKernelMsgListener {
 
     void onLineDev(ArrayList<DevInfo> arrayList);
 
-    void onLogLevelChanged(long j2);
+    void onLogLevelChanged(long j16);
 
-    void onMsgAbstractUpdate(ArrayList<MsgAbstract> arrayList);
+    void onMiscDataChanged(ArrayList<MiscData> arrayList);
 
     void onMsgBoxChanged(ArrayList<ContactMsgBoxInfo> arrayList);
 
     void onMsgDelete(Contact contact, ArrayList<Long> arrayList);
 
-    void onMsgEventListUpdate(HashMap<String, ArrayList<Long>> hashMap);
-
     void onMsgInfoListAdd(ArrayList<MsgRecord> arrayList);
 
     void onMsgInfoListUpdate(ArrayList<MsgRecord> arrayList);
 
-    void onMsgQRCodeStatusChanged(int i2);
+    void onMsgQRCodeStatusChanged(int i16);
 
-    void onMsgRecall(int i2, String str, long j2);
+    void onMsgRecall(int i16, String str, long j16);
 
     void onMsgSecurityNotify(MsgRecord msgRecord);
 
     void onMsgSettingUpdate(MsgSetting msgSetting);
 
+    void onMsgWithRichLinkInfoUpdate(ArrayList<MsgRecord> arrayList);
+
     void onNtFirstViewMsgSyncEnd();
+
+    void onNtMsgSyncContactUnread();
 
     void onNtMsgSyncEnd();
 
     void onNtMsgSyncStart();
 
-    void onReadFeedEventUpdate(FirstViewDirectMsgNotifyInfo firstViewDirectMsgNotifyInfo);
-
-    void onRecvGroupGuildFlag(int i2);
-
     void onRecvMsg(ArrayList<MsgRecord> arrayList);
 
-    void onRecvMsgSvrRspTransInfo(long j2, Contact contact, int i2, int i3, String str, byte[] bArr);
+    void onRecvMsgSvrRspTransInfo(long j16, Contact contact, int i16, int i17, String str, byte[] bArr);
 
     void onRecvOnlineFileMsg(ArrayList<MsgRecord> arrayList);
 
-    void onRecvS2CMsg(ArrayList<Byte> arrayList);
-
     void onRecvSysMsg(ArrayList<Byte> arrayList);
 
-    void onRecvUDCFlag(int i2);
+    void onRedTouchChanged();
 
     void onRichMediaDownloadComplete(FileTransNotifyInfo fileTransNotifyInfo);
 
@@ -114,23 +93,21 @@ public interface IKernelMsgListener {
 
     void onSearchGroupFileInfoUpdate(SearchGroupFileResult searchGroupFileResult);
 
-    void onSendMsgError(long j2, Contact contact, int i2, String str);
+    void onSendMsgError(long j16, Contact contact, int i16, String str);
 
-    void onSysMsgNotification(int i2, long j2, long j3, ArrayList<Byte> arrayList);
+    void onSysMsgNotification(int i16, long j16, long j17, boolean z16, ArrayList<Byte> arrayList);
 
     void onTempChatInfoUpdate(TempChatInfo tempChatInfo);
 
-    void onUnreadCntAfterFirstView(HashMap<Integer, ArrayList<UnreadCntInfo>> hashMap);
+    void onUserChannelTabStatusChanged(boolean z16);
 
-    void onUnreadCntUpdate(HashMap<Integer, ArrayList<UnreadCntInfo>> hashMap);
+    void onUserOnlineStatusChanged(boolean z16);
 
-    void onUserChannelTabStatusChanged(boolean z);
-
-    void onUserOnlineStatusChanged(boolean z);
+    void onUserSecQualityChanged(QueryUserSecQualityRsp queryUserSecQualityRsp);
 
     void onUserTabStatusChanged(ArrayList<TabStatusInfo> arrayList);
 
-    void onlineStatusBigIconDownloadPush(int i2, long j2, String str);
+    void onlineStatusBigIconDownloadPush(int i16, long j16, String str);
 
-    void onlineStatusSmallIconDownloadPush(int i2, long j2, String str);
+    void onlineStatusSmallIconDownloadPush(int i16, long j16, String str);
 }

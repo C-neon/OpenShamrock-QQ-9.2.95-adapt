@@ -4,6 +4,7 @@ package moe.fuqiuluo.shamrock.remote.service.listener
 
 import moe.fuqiuluo.shamrock.helper.MessageHelper
 import com.tencent.qqnt.kernel.nativeinterface.*
+import com.tencent.qqnt.kernelpublic.nativeinterface.Contact
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -277,10 +278,8 @@ internal object AioListener : IKernelMsgListener {
 
     }
 
-    override fun onMsgAbstractUpdate(arrayList: ArrayList<MsgAbstract>?) {
-        //arrayList?.forEach {
-        //    LogCenter.log("onMsgAbstractUpdate($it)", Level.WARN)
-        //}
+    override fun onMiscDataChanged(arrayList: ArrayList<MiscData>?) {
+
     }
 
     override fun onRecvMsgSvrRspTransInfo(
@@ -294,25 +293,11 @@ internal object AioListener : IKernelMsgListener {
         LogCenter.log("onRecvMsgSvrRspTransInfo($j2, $contact, $i2, $i3, $str)", Level.DEBUG)
     }
 
-    override fun onRecvS2CMsg(arrayList: ArrayList<Byte>?) {
-        LogCenter.log("onRecvS2CMsg(${arrayList.toString()})", Level.DEBUG)
-    }
-
     override fun onRecvSysMsg(arrayList: ArrayList<Byte>?) {
         LogCenter.log("onRecvSysMsg(${arrayList.toString()})", Level.DEBUG)
     }
 
-    override fun onBroadcastHelperDownloadComplete(broadcastHelperTransNotifyInfo: BroadcastHelperTransNotifyInfo?) {}
-
-    override fun onBroadcastHelperProgerssUpdate(broadcastHelperTransNotifyInfo: BroadcastHelperTransNotifyInfo?) {}
-
-    override fun onChannelFreqLimitInfoUpdate(
-        contact: Contact?,
-        z: Boolean,
-        freqLimitInfo: FreqLimitInfo?
-    ) {
-
-    }
+    override fun onBusinessNotification(arrayList: ArrayList<BusinessNotification>?) {}
 
     override fun onContactUnreadCntUpdate(unreadMap: HashMap<Int, HashMap<String, UnreadCntInfo>>) {
         // 推送未读消息数量
@@ -331,18 +316,6 @@ internal object AioListener : IKernelMsgListener {
     }
 
     override fun onEmojiResourceUpdate(emojiResourceInfo: EmojiResourceInfo?) {
-
-    }
-
-    override fun onFeedEventUpdate(firstViewDirectMsgNotifyInfo: FirstViewDirectMsgNotifyInfo?) {
-
-    }
-
-    override fun onFirstViewDirectMsgUpdate(firstViewDirectMsgNotifyInfo: FirstViewDirectMsgNotifyInfo?) {
-
-    }
-
-    override fun onFirstViewGroupGuildMapping(arrayList: ArrayList<FirstViewGroupGuildInfo>?) {
 
     }
 
@@ -448,28 +421,12 @@ internal object AioListener : IKernelMsgListener {
         LogCenter.log("onGroupFileInfoUpdate: " + groupFileListResult.toString(), Level.DEBUG)
     }
 
-    override fun onGroupGuildUpdate(groupGuildNotifyInfo: GroupGuildNotifyInfo?) {
-        LogCenter.log("onGroupGuildUpdate: " + groupGuildNotifyInfo.toString(), Level.DEBUG)
-    }
-
     override fun onGroupTransferInfoAdd(groupItem: GroupItem?) {
         LogCenter.log("onGroupTransferInfoAdd: " + groupItem.toString(), Level.DEBUG)
     }
 
     override fun onGroupTransferInfoUpdate(groupFileListResult: GroupFileListResult?) {
         LogCenter.log("onGroupTransferInfoUpdate: " + groupFileListResult.toString(), Level.DEBUG)
-    }
-
-    override fun onGuildInteractiveUpdate(guildInteractiveNotificationItem: GuildInteractiveNotificationItem?) {
-
-    }
-
-    override fun onGuildMsgAbFlagChanged(guildMsgAbFlag: GuildMsgAbFlag?) {
-
-    }
-
-    override fun onGuildNotificationAbstractUpdate(guildNotificationAbstractInfo: GuildNotificationAbstractInfo?) {
-
     }
 
     override fun onHitCsRelatedEmojiResult(downloadRelateEmojiResultInfo: DownloadRelateEmojiResultInfo?) {
@@ -508,10 +465,6 @@ internal object AioListener : IKernelMsgListener {
 
     }
 
-    override fun onMsgEventListUpdate(hashMap: HashMap<String, ArrayList<Long>>?) {
-
-    }
-
     override fun onMsgInfoListAdd(arrayList: ArrayList<MsgRecord>?) {
 
     }
@@ -528,7 +481,15 @@ internal object AioListener : IKernelMsgListener {
 
     }
 
+    override fun onMsgWithRichLinkInfoUpdate(arrayList: ArrayList<MsgRecord>?) {
+
+    }
+
     override fun onNtFirstViewMsgSyncEnd() {
+
+    }
+
+    override fun onNtMsgSyncContactUnread() {
 
     }
 
@@ -540,32 +501,16 @@ internal object AioListener : IKernelMsgListener {
         LogCenter.log("NTKernel同步消息开始", Level.DEBUG)
     }
 
-    override fun onReadFeedEventUpdate(firstViewDirectMsgNotifyInfo: FirstViewDirectMsgNotifyInfo?) {
+    override fun onRedTouchChanged() {
 
-    }
-
-    override fun onRecvGroupGuildFlag(i2: Int) {
-
-    }
-
-    override fun onRecvUDCFlag(i2: Int) {
-        LogCenter.log("onRecvUDCFlag($i2)", Level.DEBUG)
     }
 
     override fun onSendMsgError(j2: Long, contact: Contact?, i2: Int, str: String?) {
         LogCenter.log("onSendMsgError($j2, $contact, $j2, $str)", Level.DEBUG)
     }
 
-    override fun onSysMsgNotification(i2: Int, j2: Long, j3: Long, arrayList: ArrayList<Byte>?) {
-        LogCenter.log("onSysMsgNotification($i2, $j2, $j3, $arrayList)", Level.DEBUG)
-    }
-
-    override fun onUnreadCntAfterFirstView(hashMap: HashMap<Int, ArrayList<UnreadCntInfo>>?) {
-
-    }
-
-    override fun onUnreadCntUpdate(hashMap: HashMap<Int, ArrayList<UnreadCntInfo>>?) {
-
+    override fun onSysMsgNotification(i2: Int, j2: Long, j3: Long, z: Boolean, arrayList: ArrayList<Byte>?) {
+        LogCenter.log("onSysMsgNotification($i2, $j2, $j3, $z, $arrayList)", Level.DEBUG)
     }
 
     override fun onUserChannelTabStatusChanged(z: Boolean) {
@@ -573,6 +518,10 @@ internal object AioListener : IKernelMsgListener {
     }
 
     override fun onUserOnlineStatusChanged(z: Boolean) {
+
+    }
+
+    override fun onUserSecQualityChanged(queryUserSecQualityRsp: QueryUserSecQualityRsp?) {
 
     }
 

@@ -14,6 +14,45 @@
 
 </div>
 
+## QQ 9.2.95 适配分支说明
+
+这是一个用于本机 AstrBot / QQ 机器人链路验证的 OpenShamrock 适配分支，目标版本为 QQ `9.2.95`（versionCode `14200`）。本分支基于 `Mythologyli/OpenShamrock-fix` 的 `238b954` 提交继续修改，原始项目来源、版权和许可证说明见 [NOTICE.md](NOTICE.md) 与 [LICENSE](LICENSE)。
+
+### 已适配内容
+
+- 对齐 QQ `9.2.95` 中 `IKernelGroupListener` 与 `IKernelMsgListener` 的接口签名，避免加载 Shamrock 后因接口方法不匹配导致 QQ 闪退。
+- 补充 QQ `9.2.95` 运行时需要的 `nativeinterface` / `kernelpublic.nativeinterface` 占位类型。
+- 保留 OneBot 反向 WebSocket 路径，已用于 AstrBot 对接验证。
+- 在 Xposed 入口增加版本适配标记日志，便于 logcat 中确认当前 APK 已包含此补丁。
+
+### 本地验证
+
+验证环境为 Redmi K50 Pro、Magisk / LSPosed、QQ `9.2.95`、Shamrock `v1.0.8.r318.238b954`、AstrBot OneBot v11 反向 WebSocket。
+
+已验证：
+
+- `:app:assembleArm64Debug` 构建成功。
+- QQ 主进程、MSF 进程和 pushservice 进程可稳定启动。
+- logcat 未再出现 `AbstractMethodError`、`JNI FatalError`、`QQCrashHandleListener` 相关崩溃。
+- Shamrock 可连接 AstrBot 反向 WebSocket，日志出现 `WebSocketClient onOpen: 101`。
+- AstrBot 日志出现 `aiocqhttp(OneBot v11) 适配器已连接`，并可收到真实 QQ 群消息事件。
+
+构建命令：
+
+```bash
+env JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home bash ./gradlew :app:assembleArm64Debug --no-daemon
+```
+
+输出 APK：
+
+```text
+app/build/outputs/apk/arm64/debug/Shamrock-v1.0.8.r318.238b954-arm64.apk
+```
+
+### 风险提示
+
+本分支只表示在上述本机环境完成过适配和链路验证，不代表官方支持或长期兼容。QQ、LSPosed、Android 系统或 Shamrock 上游任一组件更新后，都可能需要重新对齐接口。请仅用于学习、研究和自有设备测试，并自行承担账号、设备和平台规则风险。
+
 ## 简介
 
 ☘ 基于 Lsposed(**Non**-Riru) 实现 OneBot 标准的 QQ 机器人框架，原作者[**fuqiuluo**](https://github.com/fuqiuluo)已脱离开发，接下来由白池接手哦！本项目为OpenShamrock，不会有任何收费行为，欢迎大家的加入！

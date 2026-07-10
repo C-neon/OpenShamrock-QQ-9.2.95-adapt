@@ -123,6 +123,8 @@ internal class XposedEntry: IXposedHookLoadPackage {
         LuoClassloader.hostClassLoader = classLoader
 
         if(injectClassloader(XposedEntry::class.java.classLoader)) {
+            log("[Shamrock] QQ 9.2.95 exact interface patch active.")
+
             if ("1" != System.getProperty("qxbot_flag")) {
                 System.setProperty("qxbot_flag", "1")
             } else return
