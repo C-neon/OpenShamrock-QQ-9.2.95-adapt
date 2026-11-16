@@ -80,7 +80,7 @@ internal object GlobalEventTransmitter: BaseSvc() {
                     peerId = uin,
                     userId = record.senderUin,
                     message = if(ShamrockConfig.useCQ()) rawMsg.json
-                    else elements.toSegments(record.chatType, record.peerUin.toString(), "0").map {
+                    else elements.toSegments(record.chatType, record.peerUin.toString(), "0", record.msgId, record.msgRandom, record.msgSeq).map {
                         it.toJson()
                     }.json,
                     rawMessage = rawMsg,
@@ -137,7 +137,7 @@ internal object GlobalEventTransmitter: BaseSvc() {
                     peerId = botUin,
                     userId = record.senderUin,
                     message = if(ShamrockConfig.useCQ()) rawMsg.json
-                    else elements.toSegments(record.chatType, record.peerUin.toString(), "0").map {
+                    else elements.toSegments(record.chatType, record.peerUin.toString(), "0", record.msgId, record.msgRandom, record.msgSeq).map {
                         it.toJson()
                     }.json,
                     rawMessage = rawMsg,
@@ -189,7 +189,7 @@ internal object GlobalEventTransmitter: BaseSvc() {
                     peerId = botUin,
                     userId = record.senderUid.toLong(),
                     message = if(ShamrockConfig.useCQ()) rawMsg.json
-                    else elements.toSegments(record.chatType, record.guildId, record.channelId).map {
+                    else elements.toSegments(record.chatType, record.guildId, record.channelId, record.msgId, record.msgRandom, record.msgSeq).map {
                         it.toJson()
                     }.json,
                     rawMessage = rawMsg,

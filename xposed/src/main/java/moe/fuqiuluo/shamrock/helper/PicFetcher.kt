@@ -5,6 +5,7 @@ import com.tencent.qqnt.kernel.nativeinterface.MsgConstant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.fuqiuluo.qqinterface.servlet.RkeySvc
+import moe.fuqiuluo.qqinterface.servlet.transfile.RichMediaDownloadSvc
 import moe.fuqiuluo.qqinterface.servlet.transfile.RichProtoSvc
 import moe.fuqiuluo.shamrock.helper.db.ImageMapping
 import mqq.app.MobileQQ
@@ -20,24 +21,26 @@ import java.net.URL
  * 所以这里按可靠性从高到低尝试多种途径，任何一个成功就返回字节：
  *
  *  1. QQ 自己已经落盘的缓存文件(按 md5 在 QQ 图片目录里找) —— 不走网络，最稳；
- *  2. 消息元素里携带的原图地址(originImageUrl) —— QQ 自己给的地址；
- *  3. **新增：NT 多媒体下载 (multimedia.nt.qq.com.cn) + rkey (OIDB 0x9067)** —— 最优先的网络策略；
- *  4. **新增：备选 0x11c4_200 (fileUuid + md5 -> IndexNode -> domain+urlPath+rKeyParam)**；
- *  5. RichProto 图片下载协议(GRP_PIC_DW / C2C_PIC_DW) 换出的下载地址（降级）；
- *  6. QQ NT 本地图片库：按 fileUuid / md5 找落盘副本；
- *  7. 历史遗留的 gchat 直链拼接(仅作最后兜底)。
+ *  2. 消息里记录的本地路径
+ *  3. **新增：NT kernel downloadRichMediaInVisit (最优先网络策略，需 msgId+elementId)** —— 原图直传，最快；
+ *  4. NT 多媒体下载 (multimedia.nt.qq.com.cn) + rkey (OIDB 0x9067) —— 备选网络策略；
+ *  5. 备选 0x11c4_200 (fileUuid + md5 -> IndexNode -> domain+urlPath+rKeyParam) —— 占位；
+ *  6. 消息元素里携带的原图地址(originImageUrl) —— QQ 自己给的地址；
+ *  7. RichProto 图片下载协议(GRP_PIC_DW / C2C_PIC_DW) 换出的下载地址（降级）；
+ *  8. QQ NT 本地图片库：按 fileUuid / md5 找落盘副本；
+ *  9. 历史遗留的 gchat 直链拼接(仅作最后兜底)。
  */
 internal data class PicPayload(
     val bytes: ByteArray,
     /** 成功取到字节的地址，取不到时为本地路径 */
     val url: String,
-    /** 取字节的来源: local_cache / origin_url / nt_download / oidb_11c4 / rich_proto / nt_local / legacy_url */
+    /** 取字节的来源: local_cache / source_path / nt_kernel / nt_download / oidb_11c4 / origin_url / rich_proto / nt_local / legacy_url */
     val source: String
 )
 
 internal object PicFetcher {
     /** 代码版本标识，用于日志确认跑的是新代码 */
-    private const val CODE_VERSION = "fix11-nt-rkey"
+    private const val CODE_VERSION = "fix11-nt-kernel"
     
     /** 单张图片最大允许体积，防止把大图整成巨大 base64 撑爆响应 */
     private const val MAX_BYTES = 16 * 1024 * 1024
@@ -120,6 +123,40 @@ internal object PicFetcher {
         // BMP
         if (b[0] == 0x42.toByte() && b[1] == 0x4D.toByte()) return true
         return false
+    }
+
+    /**
+     * NT kernel 原生下载策略 (最优先网络策略)
+     * 使用 IKernelRichMediaService.downloadRichMediaInVisit，需 msgId + elementId
+     */
+    private suspend fun tryNtKernelDownload(image: ImageMapping, md5: String): PicPayload? {
+        if (image.msgId == 0L || image.elementId == 0L) {
+            LogCenter.log("[PicFetcher] NT kernel 策略跳过: 缺少 msgId=${image.msgId} 或 elementId=${image.elementId}", Level.WARN)
+            return null
+        }
+
+        LogCenter.log("[PicFetcher] NT kernel 策略开始: msgId=${image.msgId} elementId=${image.elementId} peer='${image.peerUin}' chatType=${image.chatType}", Level.WARN)
+
+        val filePath = RichMediaDownloadSvc.downloadImage(image)
+        if (filePath == null) {
+            LogCenter.log("[PicFetcher] NT kernel 策略失败: msgId=${image.msgId} elementId=${image.elementId}", Level.WARN)
+            return null
+        }
+
+        val file = File(filePath)
+        if (!file.isFile || file.length() == 0L) {
+            LogCenter.log("[PicFetcher] NT kernel 策略: 落盘文件不存在或为空 $filePath", Level.WARN)
+            return null
+        }
+
+        val bytes = runCatching { file.readBytes() }.getOrNull()
+        if (bytes == null || bytes.isEmpty() || !looksLikeImage(bytes, bytes.size)) {
+            LogCenter.log("[PicFetcher] NT kernel 策略: 读取文件失败或非有效图片 $filePath size=${bytes?.size}", Level.WARN)
+            return null
+        }
+
+        LogCenter.log("[PicFetcher] NT kernel 策略成功: ${bytes.size} bytes filePath=$filePath", Level.WARN)
+        return PicPayload(bytes, filePath, "nt_kernel")
     }
 
     private suspend fun httpGet(url: String): ByteArray? = withContext(Dispatchers.IO) {
@@ -288,7 +325,7 @@ internal object PicFetcher {
             "[PicFetcher] ====== 开始取图 code_version=$CODE_VERSION ======\n" +
             "  md5=$md5 chatType=${image.chatType} peer='${image.peerUin}' uuid='${image.fileUuid}' " +
             "size=${image.size} src='${image.sourcePath}' origin='${image.originUrl.take(60)}' " +
-            "msgTime=${image.msgTime} sender='${image.senderUin}'",
+            "msgTime=${image.msgTime} sender='${image.senderUin}' msgId=${image.msgId} msgSeq=${image.msgSeq} elementId=${image.elementId}",
             Level.WARN
         )
         // 1. 消息里记录的本地路径
@@ -311,17 +348,21 @@ internal object PicFetcher {
                 return PicPayload(bytes, f.absolutePath, "local_cache")
             }
         }
-        LogCenter.log("[PicFetcher] 即将尝试 NT 下载策略 (策略3)", Level.WARN)
 
-        // 3. 【新增】NT 多媒体下载 + rkey (最优先网络策略)
+        // 3. 【新增】NT kernel 原生下载 (最优先网络策略，需 msgId + elementId)
+        val ntKernelResult = tryNtKernelDownload(image, md5)
+        LogCenter.log("[PicFetcher] NT kernel 策略返回: ${ntKernelResult?.source ?: "null"}", Level.WARN)
+        ntKernelResult?.let { return it }
+
+        // 4. NT 多媒体下载 + rkey (OIDB 0x9067)
         val ntResult = tryNtDownload(image, md5)
         LogCenter.log("[PicFetcher] NT 下载策略返回: ${ntResult?.source ?: "null"}", Level.WARN)
         ntResult?.let { return it }
 
-        // 4. 【新增】备选 0x11c4_200
+        // 5. 备选 0x11c4_200
         tryOidb11c4(image, md5)?.let { return it }
 
-        // 5. QQ 自己给出的原图地址（支持相对路径，原有逻辑）
+        // 6. QQ 自己给出的原图地址（支持相对路径，原有逻辑）
         if (image.originUrl.isNotBlank()) {
             val urlList = buildFullImageUrl(image.originUrl)
             for ((url, tag) in urlList) {
@@ -332,7 +373,7 @@ internal object PicFetcher {
             }
         }
 
-        // 6. RichProto 图片下载协议（降级策略）
+        // 7. RichProto 图片下载协议（降级策略）
         val peer = image.peerUin.ifBlank { "0" }
         val t = image.msgTime.toInt()
         if (image.chatType == MsgConstant.KCHATTYPEGROUP) {
@@ -365,7 +406,7 @@ internal object PicFetcher {
             }
         }
 
-        // 7. QQ NT 本地图片库：按 fileUuid / 文件名直接找落盘副本
+        // 8. QQ NT 本地图片库：按 fileUuid / 文件名直接找落盘副本
         run {
             val keys = listOfNotNull(
                 image.fileUuid.takeIf { it.isNotBlank() },
@@ -396,7 +437,7 @@ internal object PicFetcher {
             LogCenter.log("[PicFetcher] NT 本地未命中 roots=${ntRoots.size}", Level.WARN)
         }
 
-        // 8. 遗留直链拼接（最后兜底）
+        // 9. 遗留直链拼接（最后兜底）
         val legacy = when (image.chatType) {
             MsgConstant.KCHATTYPEGROUP -> RichProtoSvc.getGroupPicDownUrl(
                 peer,

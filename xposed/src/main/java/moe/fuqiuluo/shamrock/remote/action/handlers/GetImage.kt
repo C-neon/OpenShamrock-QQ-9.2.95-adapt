@@ -35,7 +35,7 @@ internal object GetImage: IActionHandler() {
         val image = ImageDB.getInstance().imageMappingDao().queryByFileName(fileMd5)
             ?: return logic("只能查询已缓存的图片", echo = echo)
 
-        // 先尝试真正把图片字节取回来（本地缓存 / 原图地址 / QQ 图片下载协议）
+        // 先尝试真正把图片字节取回来（本地缓存 / NT kernel / 原图地址 / QQ 图片下载协议）
         val payload = PicFetcher.fetch(image, fileMd5)
 
         val fallbackUrl = when (image.chatType) {
@@ -60,7 +60,7 @@ internal object GetImage: IActionHandler() {
                 fallbackUrl,
                 null,
                 "none",
-                "fix10"
+                "fix11-nt-kernel"
             ), echo = echo)
         }
 
@@ -70,7 +70,7 @@ internal object GetImage: IActionHandler() {
             payload.url,
             PicFetcher.toBase64(payload.bytes),
             payload.source,
-            "fix10"
+            "fix11-nt-kernel"
         ), echo = echo)
     }
 
@@ -83,7 +83,7 @@ internal object GetImage: IActionHandler() {
         val url: String,
         /** 图片内容的 base64（取到字节时才有），可直接落盘成图片 */
         val base64: String? = null,
-        /** 字节来源: source_path / local_cache / origin_url / rich_proto / legacy_url */
+        /** 字节来源: source_path / local_cache / nt_kernel / nt_download / oidb_11c4 / origin_url / rich_proto / nt_local / legacy_url */
         val source: String? = null,
         /** 构建标记：无默认值，保证一定被序列化 */
         val build: String

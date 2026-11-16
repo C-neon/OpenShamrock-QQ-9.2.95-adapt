@@ -29,7 +29,15 @@ data class ImageMapping (
     /** 收到消息的时间(unix 秒)，作为群图下载协议的 msgTime */
     val msgTime: Long = 0,
     /** 发送者 uin，部分下载协议需要 secondUin */
-    val senderUin: String = ""
+    val senderUin: String = "",
+    /** 消息 ID，用于 NT kernel 下载 */
+    val msgId: Long = 0,
+    /** 消息随机数，用于 NT kernel 下载 */
+    val msgRandom: Long = 0,
+    /** 消息序列号，用于 NT kernel 下载 */
+    val msgSeq: Long = 0,
+    /** 消息元素 ID，用于 NT kernel 下载匹配回调 */
+    val elementId: Long = 0
 )
 
 @Dao
@@ -42,7 +50,7 @@ interface ImageMappingDao {
 }
 
 // 缓存表，版本升级时直接重建即可
-@Database(entities = [ImageMapping::class], version = 3)
+@Database(entities = [ImageMapping::class], version = 4)
 internal abstract class ImageDB: RoomDatabase() {
     abstract fun imageMappingDao(): ImageMappingDao
 

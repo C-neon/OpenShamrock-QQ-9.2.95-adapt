@@ -12,6 +12,7 @@ import moe.fuqiuluo.qqinterface.servlet.MsgSvc
 import moe.fuqiuluo.qqinterface.servlet.TicketSvc
 import moe.fuqiuluo.qqinterface.servlet.msg.convert.toCQCode
 import moe.fuqiuluo.qqinterface.servlet.transfile.RichProtoSvc
+import moe.fuqiuluo.qqinterface.servlet.transfile.RichMediaDownloadSvc
 import moe.fuqiuluo.shamrock.remote.service.config.ShamrockConfig
 import moe.fuqiuluo.shamrock.helper.Level
 import moe.fuqiuluo.shamrock.helper.LogCenter
@@ -65,7 +66,7 @@ internal object AioListener : IKernelMsgListener {
                 subPeerId = record.channelId ?: peerId
             )
 
-            val rawMsg = record.elements.toCQCode(record.chatType, peerId, record.channelId ?: peerId)
+            val rawMsg = record.elements.toCQCode(record.chatType, peerId, record.channelId ?: peerId, record.msgId, record.msgRandom, record.msgSeq)
             if (rawMsg.isEmpty()) return
 
             if (ShamrockConfig.aliveReply() && rawMsg == "ping") {
@@ -231,7 +232,7 @@ internal object AioListener : IKernelMsgListener {
                     || record.peerUin == TicketSvc.getLongUin()
                 ) return@launch
 
-                val rawMsg = record.elements.toCQCode(record.chatType, peerId, record.channelId ?: peerId)
+                val rawMsg = record.elements.toCQCode(record.chatType, peerId, record.channelId ?: peerId, record.msgId, record.msgRandom, record.msgSeq)
                 if (rawMsg.isEmpty()) return@launch
                 LogCenter.log("自发消息(target = ${record.peerUin}, id = $msgHash, msg = $rawMsg)")
 
@@ -402,7 +403,8 @@ internal object AioListener : IKernelMsgListener {
     }
 
     override fun onRichMediaDownloadComplete(fileTransNotifyInfo: FileTransNotifyInfo) {
-
+        LogCenter.log("[AioListener] onRichMediaDownloadComplete msgId=${fileTransNotifyInfo.msgId} msgElementId=${fileTransNotifyInfo.msgElementId} fileErrCode=${fileTransNotifyInfo.fileErrCode} filePath='${fileTransNotifyInfo.filePath}'", Level.WARN)
+        RichMediaDownloadSvc.onRichMediaDownloadComplete(fileTransNotifyInfo)
     }
 
     override fun onRichMediaProgerssUpdate(fileTransNotifyInfo: FileTransNotifyInfo) {

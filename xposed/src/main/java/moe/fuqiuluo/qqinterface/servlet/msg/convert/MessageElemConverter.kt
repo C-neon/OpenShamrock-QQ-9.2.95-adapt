@@ -23,7 +23,10 @@ internal sealed class MessageElemConverter: IMessageConvert {
             chatType: Int,
             peerId: String,
             subPeer: String,
-            element: MsgElement
+            element: MsgElement,
+            msgId: Long,
+            msgRandom: Long,
+            msgSeq: Long
         ): MessageSegment {
             val text = element.textElement
             return if (text.atType != MsgConstant.ATTYPEUNKNOWN) {
@@ -52,7 +55,10 @@ internal sealed class MessageElemConverter: IMessageConvert {
             chatType: Int,
             peerId: String,
             subPeer: String,
-            element: MsgElement
+            element: MsgElement,
+            msgId: Long,
+            msgRandom: Long,
+            msgSeq: Long
         ): MessageSegment {
             val face = element.faceElement
 
@@ -123,7 +129,10 @@ internal sealed class MessageElemConverter: IMessageConvert {
             chatType: Int,
             peerId: String,
             subPeer: String,
-            element: MsgElement
+            element: MsgElement,
+            msgId: Long,
+            msgRandom: Long,
+            msgSeq: Long
         ): MessageSegment {
             val image = element.picElement
             val md5 = image.md5HexStr ?: image.fileName
@@ -141,7 +150,11 @@ internal sealed class MessageElemConverter: IMessageConvert {
                     originUrl = image.originImageUrl ?: "",
                     sourcePath = image.sourcePath ?: "",
                     msgTime = System.currentTimeMillis() / 1000L,
-                    senderUin = subPeer
+                    senderUin = subPeer,
+                    msgId = msgId,
+                    msgRandom = msgRandom,
+                    msgSeq = msgSeq,
+                    elementId = element.elementId
                 )
             )
 
@@ -170,7 +183,10 @@ internal sealed class MessageElemConverter: IMessageConvert {
             chatType: Int,
             peerId: String,
             subPeer: String,
-            element: MsgElement
+            element: MsgElement,
+            msgId: Long,
+            msgRandom: Long,
+            msgSeq: Long
         ): MessageSegment {
             val record = element.pttElement
 
@@ -208,7 +224,10 @@ internal sealed class MessageElemConverter: IMessageConvert {
             chatType: Int,
             peerId: String,
             subPeer: String,
-            element: MsgElement
+            element: MsgElement,
+            msgId: Long,
+            msgRandom: Long,
+            msgSeq: Long
         ): MessageSegment {
             val video = element.videoElement
             val md5 = video.fileName.split(".")[0]
@@ -239,7 +258,10 @@ internal sealed class MessageElemConverter: IMessageConvert {
             chatType: Int,
             peerId: String,
             subPeer: String,
-            element: MsgElement
+            element: MsgElement,
+            msgId: Long,
+            msgRandom: Long,
+            msgSeq: Long
         ): MessageSegment {
             val face = element.marketFaceElement
             return when (face.emojiId.lowercase()) {
@@ -263,7 +285,10 @@ internal sealed class MessageElemConverter: IMessageConvert {
             chatType: Int,
             peerId: String,
             subPeer: String,
-            element: MsgElement
+            element: MsgElement,
+            msgId: Long,
+            msgRandom: Long,
+            msgSeq: Long
         ): MessageSegment {
             val data = element.arkElement.bytesData.asJsonObject
             return when (data["app"].asString) {
@@ -326,7 +351,10 @@ internal sealed class MessageElemConverter: IMessageConvert {
             chatType: Int,
             peerId: String,
             subPeer: String,
-            element: MsgElement
+            element: MsgElement,
+            msgId: Long,
+            msgRandom: Long,
+            msgSeq: Long
         ): MessageSegment {
             val reply = element.replyElement
             val msgId = reply.replayMsgId
@@ -359,7 +387,10 @@ internal sealed class MessageElemConverter: IMessageConvert {
             chatType: Int,
             peerId: String,
             subPeer: String,
-            element: MsgElement
+            element: MsgElement,
+            msgId: Long,
+            msgRandom: Long,
+            msgSeq: Long
         ): MessageSegment {
             val tip = element.grayTipElement
             when(tip.subElementType) {
@@ -395,7 +426,10 @@ internal sealed class MessageElemConverter: IMessageConvert {
             chatType: Int,
             peerId: String,
             subPeer: String,
-            element: MsgElement
+            element: MsgElement,
+            msgId: Long,
+            msgRandom: Long,
+            msgSeq: Long
         ): MessageSegment {
             val fileMsg = element.fileElement
             val fileName = fileMsg.fileName
@@ -433,7 +467,10 @@ internal sealed class MessageElemConverter: IMessageConvert {
             chatType: Int,
             peerId: String,
             subPeer: String,
-            element: MsgElement
+            element: MsgElement,
+            msgId: Long,
+            msgRandom: Long,
+            msgSeq: Long
         ): MessageSegment {
             val multiMsg = element.multiForwardMsgElement
             return MessageSegment(
@@ -450,7 +487,10 @@ internal sealed class MessageElemConverter: IMessageConvert {
             chatType: Int,
             peerId: String,
             subPeer: String,
-            element: MsgElement
+            element: MsgElement,
+            msgId: Long,
+            msgRandom: Long,
+            msgSeq: Long
         ): MessageSegment {
             val longMsg = element.structLongMsgElement
             return MessageSegment(
@@ -467,7 +507,10 @@ internal sealed class MessageElemConverter: IMessageConvert {
             chatType: Int,
             peerId: String,
             subPeer: String,
-            element: MsgElement
+            element: MsgElement,
+            msgId: Long,
+            msgRandom: Long,
+            msgSeq: Long
         ): MessageSegment {
             val markdown = element.markdownElement
             return MessageSegment(
@@ -484,7 +527,10 @@ internal sealed class MessageElemConverter: IMessageConvert {
             chatType: Int,
             peerId: String,
             subPeer: String,
-            element: MsgElement
+            element: MsgElement,
+            msgId: Long,
+            msgRandom: Long,
+            msgSeq: Long
         ): MessageSegment {
             val bubbleElement = element.faceBubbleElement
             return MessageSegment(
