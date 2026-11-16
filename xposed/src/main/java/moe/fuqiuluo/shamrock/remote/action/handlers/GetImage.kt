@@ -4,6 +4,7 @@ import com.tencent.qqnt.kernel.nativeinterface.MsgConstant
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import moe.fuqiuluo.qqinterface.servlet.transfile.RichProtoSvc
+import moe.fuqiuluo.shamrock.helper.CompressImageUtil
 import moe.fuqiuluo.shamrock.helper.Level
 import moe.fuqiuluo.shamrock.helper.LogCenter
 import moe.fuqiuluo.shamrock.helper.PicFetcher
@@ -64,11 +65,14 @@ internal object GetImage: IActionHandler() {
             ), echo = echo)
         }
 
+        // 压缩图片（如需要）
+        val compressedBytes = CompressImageUtil.compressIfNeeded(payload.bytes)
+
         return ok(GetImageResult(
-            payload.bytes.size.toLong(),
+            compressedBytes.size.toLong(),
             image.fileName,
             payload.url,
-            PicFetcher.toBase64(payload.bytes),
+            PicFetcher.toBase64(compressedBytes),
             payload.source,
             "fix11-nt-kernel"
         ), echo = echo)

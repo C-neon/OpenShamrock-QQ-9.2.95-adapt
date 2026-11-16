@@ -155,6 +155,10 @@ internal object PicFetcher {
             return null
         }
 
+        // 字节已读入内存，删除 QQ 落盘的临时原图（chatraw 等目录）
+        val deleted = file.delete()
+        LogCenter.log("[PicFetcher] NT kernel 策略: 已删除临时文件 $filePath deleted=$deleted", Level.WARN)
+
         LogCenter.log("[PicFetcher] NT kernel 策略成功: ${bytes.size} bytes filePath=$filePath", Level.WARN)
         return PicPayload(bytes, filePath, "nt_kernel")
     }
