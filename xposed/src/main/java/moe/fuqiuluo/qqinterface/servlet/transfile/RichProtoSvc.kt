@@ -149,7 +149,8 @@ internal object RichProtoSvc: BaseSvc() {
     suspend fun getGroupPicDownUrl(
         peerId: String,
         md5: String,
-        msgTime: Int = 0
+        msgTime: Int = 0,
+        secondUin: String = ""
     ): String {
         if (md5.length != 32) return ""
         return withTimeoutOrNull(6000L) {
@@ -161,8 +162,8 @@ internal object RichProtoSvc: BaseSvc() {
                     downReq.selfUin = runtime.currentAccountUin
                     downReq.peerUin = if (peerId.isBlank() || peerId == "0")
                         runtime.currentAccountUin else peerId
-                    downReq.secondUin = downReq.peerUin
                     downReq.uinType = FileMsg.UIN_TROOP
+                    downReq.secondUin = if (secondUin.isNotBlank()) secondUin else downReq.peerUin
                     downReq.md5 = md5.hex2ByteArray()
                     downReq.fileType = FileMsg.TRANSFILE_TYPE_PIC
                     downReq.msgTime = msgTime

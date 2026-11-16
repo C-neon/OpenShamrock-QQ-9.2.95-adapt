@@ -25,7 +25,11 @@ data class ImageMapping (
     /** QQ 自己给出的原图地址(可能为空) */
     val originUrl: String = "",
     /** QQ 本地已缓存的图片路径(可能为空) */
-    val sourcePath: String = ""
+    val sourcePath: String = "",
+    /** 收到消息的时间(unix 秒)，作为群图下载协议的 msgTime */
+    val msgTime: Long = 0,
+    /** 发送者 uin，部分下载协议需要 secondUin */
+    val senderUin: String = ""
 )
 
 @Dao
@@ -38,7 +42,7 @@ interface ImageMappingDao {
 }
 
 // 缓存表，版本升级时直接重建即可
-@Database(entities = [ImageMapping::class], version = 2)
+@Database(entities = [ImageMapping::class], version = 3)
 internal abstract class ImageDB: RoomDatabase() {
     abstract fun imageMappingDao(): ImageMappingDao
 

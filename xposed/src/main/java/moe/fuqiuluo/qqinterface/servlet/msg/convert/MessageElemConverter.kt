@@ -139,7 +139,9 @@ internal sealed class MessageElemConverter: IMessageConvert {
                     peerUin = peerId,
                     fileUuid = image.fileUuid ?: "",
                     originUrl = image.originImageUrl ?: "",
-                    sourcePath = image.sourcePath ?: ""
+                    sourcePath = image.sourcePath ?: "",
+                    msgTime = System.currentTimeMillis() / 1000L,
+                    senderUin = subPeer
                 )
             )
 
