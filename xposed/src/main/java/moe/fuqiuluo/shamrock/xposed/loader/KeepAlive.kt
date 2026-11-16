@@ -1,6 +1,9 @@
 @file:Suppress("UNUSED_VARIABLE", "LocalVariableName")
 package moe.fuqiuluo.shamrock.xposed.loader
 
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.os.Process
@@ -20,6 +23,7 @@ internal object KeepAlive {
 
     private lateinit var METHOD_IS_KILLED: Method
     private var allowPersistent: Boolean = false
+    private var allowAutoStart: Boolean = false
 
     operator fun invoke(loader: ClassLoader) {
         val pref = XSharedPreferences("moe.fuqiuluo.shamrock", "shared_config")
@@ -68,7 +72,8 @@ internal object KeepAlive {
 
         if (pref.file.canRead()) {
             allowPersistent = pref.getBoolean("persistent", false)
-            XposedBridge.log("[Shamrock] allowPersistent = $allowPersistent")
+            allowAutoStart = pref.getBoolean("enable_auto_start", false)
+            XposedBridge.log("[Shamrock] allowPersistent = $allowPersistent, allowAutoStart = $allowAutoStart")
         } else {
             XposedBridge.log("[Shamrock] unable to load XSharedPreferences")
         }
@@ -97,7 +102,19 @@ internal object KeepAlive {
                         } else false
                         if (isKilled) {
                             deletedList.add(it)
-                            XposedBridge.log("Process Closed: $it")
+                            XposedBridge.log("[Shamrock] Process Closed: $it")
+                            // 自动唤醒：如果是 QQ 进程且开启了自动唤醒，尝试重新启动
+                            val applicationInfo = try {
+                                it.javaClass.getDeclaredField("info").also {
+                                    if (!it.isAccessible) it.isAccessible = true
+                                }.get(it) as ApplicationInfo
+                            } catch (e: Exception) {
+                                null
+                            }
+                            if (applicationInfo != null && applicationInfo.processName == "com.tencent.mobileqq" && allowAutoStart) {
+                                XposedBridge.log("[Shamrock] Auto-start: QQ process died, attempting to restart...")
+                                restartQQ()
+                            }
                         } else {
                             keepByAdj(it)
                         }
@@ -114,6 +131,29 @@ internal object KeepAlive {
         }
     }
 
+    private fun restartQQ() {
+        try {
+            // 使用 system_server 的上下文启动 QQ 主 Activity
+            val context = XposedHelpers.callStaticMethod(
+                XposedHelpers.findClass("android.app.ActivityThread", null),
+                "currentActivityThread"
+            ) as? Context
+            
+            if (context != null) {
+                val intent = Intent().apply {
+                    setComponent(ComponentName("com.tencent.mobileqq", "com.tencent.mobileqq.activity.SplashActivity"))
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                }
+                context.startActivity(intent)
+                XposedBridge.log("[Shamrock] Auto-start: QQ restart intent sent")
+            } else {
+                XposedBridge.log("[Shamrock] Auto-start: Failed to get system context")
+            }
+        } catch (e: Exception) {
+            XposedBridge.log("[Shamrock] Auto-start: Failed to restart QQ: $e")
+        }
+    }
+
     private fun increaseAdj(record: Any) {
         if (record.toString().contains("system", ignoreCase = true)) {
             return
@@ -125,7 +165,6 @@ internal object KeepAlive {
             XposedBridge.log("[Shamrock] Process is keeping: $record")
             KeepRecords.add(record)
             keepByAdj(record)
-            // Error
             if (allowPersistent) {
                 XposedBridge.log("[Shamrock] Open NoDied Mode!!!")
                 keepByPersistent(record)

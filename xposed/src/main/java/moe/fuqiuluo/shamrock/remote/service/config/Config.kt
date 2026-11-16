@@ -10,7 +10,13 @@ data class ServiceConfig(
     @SerialName("active_websocket") var activeWebSocket: ConnectionConfig? = null,
     @SerialName("passive_websocket") var passiveWebSocket: MutableList<ConnectionConfig>? = null,
     @SerialName("allow-temp-session") var allowTempSession: Boolean = false,
-    @SerialName("anti_qq_trace") var antiTrace: Boolean = true
+    @SerialName("anti_qq_trace") var antiTrace: Boolean = true,
+    @SerialName("ws") var ws: Boolean = false,
+    @SerialName("ws_client") var wsClient: Boolean = false,
+    @SerialName("super_anti") var superAnti: Boolean = false,
+    @SerialName("persistent") var persistent: Boolean = false,
+    @SerialName("hook_doze") var hookDoze: Boolean = false,
+    @SerialName("enable_auto_start") var enableAutoStart: Boolean = false
 )
 
 @Serializable

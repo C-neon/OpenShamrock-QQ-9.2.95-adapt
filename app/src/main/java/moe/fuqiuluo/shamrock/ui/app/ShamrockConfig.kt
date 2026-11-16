@@ -1,9 +1,32 @@
 package moe.fuqiuluo.shamrock.ui.app
 
 import android.content.Context
+import android.os.Build
+import android.util.Log
 import moe.fuqiuluo.shamrock.ui.service.internal.broadcastToModule
+import java.io.File
 
 object ShamrockConfig {
+
+    /**
+     * 将 shared_config.xml 设为 world-readable，以便 system_server (uid 1000) 能通过 XSharedPreferences 读取。
+     * Android 7+ 不再支持 MODE_WORLD_READABLE，但可以在写入后用 File.setReadable(true, false) 实现同等效果。
+     * 同时需要确保 shared_prefs 目录对 other 有执行权限 (0711)。
+     */
+    private fun makeSharedConfigWorldReadable(ctx: Context) {
+        val prefsDir = File(ctx.getFilesDir().parent, "shared_prefs")
+        val configFile = File(prefsDir, "shared_config.xml")
+        if (configFile.exists()) {
+            // 目录对 other 可执行 (0711)，文件对 other 可读 (0644)
+            try {
+                prefsDir.setExecutable(true, false)
+                configFile.setReadable(true, false)
+                Log.d("ShamrockConfig", "makeSharedConfigWorldReadable: prefsDir=${prefsDir.absolutePath} canRead=${configFile.canRead()}")
+            } catch (e: Exception) {
+                Log.w("ShamrockConfig", "makeSharedConfigWorldReadable failed", e)
+            }
+        }
+    }
     fun getSSLKeyPath(ctx: Context): String {
         val preferences = ctx.getSharedPreferences("config", 0)
         return preferences.getString("key_store", "")!!
@@ -277,6 +300,9 @@ object ShamrockConfig {
     fun setAutoStart(ctx: Context, v: Boolean) {
         val preferences = ctx.getSharedPreferences("config", 0)
         preferences.edit().putBoolean("enable_auto_start", v).apply()
+        labPrefs(ctx).edit().putBoolean("enable_auto_start", v).apply()
+        makeSharedConfigWorldReadable(ctx)
+        pushUpdate(ctx)
     }
 
     fun setDisableAutoSyncSetting(ctx: Context, v: Boolean) {
@@ -321,6 +347,7 @@ object ShamrockConfig {
 
     fun setPersistent(ctx: Context, v: Boolean) {
         labPrefs(ctx).edit().putBoolean("persistent", v).apply()
+        makeSharedConfigWorldReadable(ctx)
         ctx.getSharedPreferences("config", 0).edit().putBoolean("persistent", v).apply()
         pushUpdate(ctx)
     }
@@ -331,6 +358,7 @@ object ShamrockConfig {
 
     fun setHookDoze(ctx: Context, v: Boolean) {
         labPrefs(ctx).edit().putBoolean("hook_doze", v).apply()
+        makeSharedConfigWorldReadable(ctx)
         ctx.getSharedPreferences("config", 0).edit().putBoolean("hook_doze", v).apply()
         pushUpdate(ctx)
     }
@@ -341,6 +369,7 @@ object ShamrockConfig {
 
     fun setSuperAnti(ctx: Context, v: Boolean) {
         labPrefs(ctx).edit().putBoolean("super_anti", v).apply()
+        makeSharedConfigWorldReadable(ctx)
         ctx.getSharedPreferences("config", 0).edit().putBoolean("super_anti", v).apply()
         pushUpdate(ctx)
     }

@@ -89,9 +89,19 @@ internal object ShamrockConfig {
                 if (intent.hasExtra("super_anti")) {
                     putBoolean("super_anti", intent.getBooleanExtra("super_anti", false))  // 反检测加强
                 }
+                if (intent.hasExtra("enable_auto_start")) {
+                    putBoolean("enable_auto_start", intent.getBooleanExtra("enable_auto_start", false)) // 自动唤醒
+                }
             }
             Config.defaultToken = intent.getStringExtra("token")
             Config.antiTrace = intent.getBooleanExtra("anti_qq_trace", true)
+            // 同步关键开关到 Config 对象，以便写入 config.json 持久化
+            Config.ws = intent.getBooleanExtra("ws", false)
+            Config.wsClient = intent.getBooleanExtra("ws_client", false)
+            Config.superAnti = intent.getBooleanExtra("super_anti", false)
+            Config.persistent = intent.getBooleanExtra("persistent", false)
+            Config.hookDoze = intent.getBooleanExtra("hook_doze", false)
+            Config.enableAutoStart = intent.getBooleanExtra("enable_auto_start", false)
             val wsPort = intent.getIntExtra("ws_port", 5800)
             Config.activeWebSocket = if (Config.activeWebSocket == null) ConnectionConfig(
                 address = "0.0.0.0",
@@ -248,6 +258,10 @@ internal object ShamrockConfig {
 
     fun allowShell(): Boolean {
         return mmkv.getBoolean("shell", false)
+    }
+
+    fun enableAutoStart(): Boolean {
+        return mmkv.getBoolean("enable_auto_start", false)
     }
 
     /**
