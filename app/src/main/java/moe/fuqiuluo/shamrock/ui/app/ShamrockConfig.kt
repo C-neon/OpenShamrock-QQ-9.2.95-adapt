@@ -313,6 +313,7 @@ object ShamrockConfig {
     fun setAliveReply(ctx: Context, v: Boolean) {
         val preferences = ctx.getSharedPreferences("config", 0)
         preferences.edit().putBoolean("alive_reply", v).apply()
+        pushUpdate(ctx)
     }
 
     fun setShellStatus(ctx: Context, v: Boolean) {
@@ -416,7 +417,8 @@ object ShamrockConfig {
             "forbid_useless_process" to preferences.getBoolean("forbid_useless_process", false),
             "persistent" to preferences.getBoolean("persistent", false),
             "hook_doze" to preferences.getBoolean("hook_doze", false),
-            "super_anti" to preferences.getBoolean("super_anti", false)
+            "super_anti" to preferences.getBoolean("super_anti", false),
+            "enable_auto_start" to preferences.getBoolean("enable_auto_start", false)
         )
     }
 
