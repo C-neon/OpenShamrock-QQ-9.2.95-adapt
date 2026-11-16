@@ -51,7 +51,7 @@ internal object PacketReceiver {
         } else {
             val seq = if (from.appSeq == -1) from.requestSsoSeq else from.appSeq
             val hash = (from.serviceCmd + seq).hashCode()
-            LogCenter.log({ "ReceivePacket[$hash](cmd = ${from.serviceCmd}, seq = $seq)" }, Level.DEBUG)
+            LogCenter.log("[PacketReceiver] 收到响应 cmd=${from.serviceCmd} appSeq=${from.appSeq} requestSsoSeq=${from.requestSsoSeq} seq=$seq hash=$hash", Level.WARN)
             MobileQQ.getContext().broadcast("xqbot") {
                 putExtra("__hash", hash)
                 putExtra("buffer", from.wupBuffer)

@@ -6,7 +6,6 @@ import com.tencent.msf.service.protocol.pb.SSOLoginMerge
 import com.tencent.qphone.base.remote.FromServiceMsg
 import com.tencent.qphone.base.remote.ToServiceMsg
 import com.tencent.qphone.base.util.CodecWarpper
-import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.DelicateCoroutinesApi
 import moe.fuqiuluo.shamrock.remote.service.PacketReceiver
 import moe.fuqiuluo.shamrock.remote.service.config.ShamrockConfig
@@ -15,8 +14,7 @@ import moe.fuqiuluo.shamrock.tools.hookMethod
 import moe.fuqiuluo.shamrock.tools.slice
 import moe.fuqiuluo.shamrock.helper.Level
 import moe.fuqiuluo.shamrock.helper.LogCenter
-import moe.fuqiuluo.shamrock.xposed.helper.internal.DynamicReceiver
-import moe.fuqiuluo.shamrock.xposed.helper.internal.IPCRequest
+import moe.fuqiuluo.shamrock.xposed.loader.LuoClassloader
 import moe.fuqiuluo.symbols.XposedHook
 
 private const val MAGIC_APP_ID = 114514
@@ -56,74 +54,65 @@ internal class HookWrapperCodec: IAction {
                 }
             }
 
-            val isInit = atomic(false)
-            CodecWarpper::class.java.hookMethod("init").after {
-                if (isInit.value) return@after
-                hookReceive(it.thisObject, it.thisObject.javaClass)
-                isInit.lazySet(true)
+            // CodecWarpper.onResponse 是 abstract 方法，不能直接 hook，必须 hook 具体子类。
+            // QQ 9.2.95 的实现类是 com.tencent.mobileqq.msf.core.s$a（onResponse(int,Object,int,byte[])）。
+            val targetClasses = linkedSetOf<Class<*>>()
+            // 1) 已知实现类
+            runCatching { LuoClassloader.load("com.tencent.mobileqq.msf.core.s\$a") }
+                .getOrNull()?.let { targetClasses += it }
+            // 2) 兜底：从 hostClassLoader 加载 CodecWarpper 子类
+            runCatching {
+                val host = LuoClassloader.hostClassLoader
+                listOf(
+                    "com.tencent.mobileqq.msf.core.s\$a",
+                    "com.tencent.mobileqq.msf.core.w",
+                ).forEach { n ->
+                    runCatching { host.loadClass(n) }.getOrNull()?.let { targetClasses += it }
+                }
             }
-            CodecWarpper::class.java.hookMethod("nativeOnReceData").before {
-                if (isInit.value) return@before
-                hookReceive(it.thisObject, it.thisObject.javaClass)
-                isInit.lazySet(true)
-            }
-        } catch (e: Exception) {
-            LogCenter.log(e.stackTraceToString(), Level.ERROR)
-        }
-    }
 
-    private fun hookReceive(thiz: Any, thizClass: Class<*>) {
-        val onResponse = thizClass.getDeclaredMethod("onResponse", Integer.TYPE, Any::class.java, Integer.TYPE)
-        //LogCenter.log("HookWrapperCodec: onResponse = $onResponse", Level.INFO)
-        DynamicReceiver.register("fake_packet", IPCRequest {
-            val uin = it.getStringExtra("package_uin")!!
-            val cmd = it.getStringExtra("package_cmd")!!
-            val seq = it.getIntExtra("package_seq", 0)
-            val buffer = it.getByteArrayExtra("package_buffer")!!
-            //LogCenter.log("伪造收包(cmd = $cmd)")
-
-            val from = FromServiceMsg()
-            from.requestSsoSeq = seq
-            from.putWupBuffer(buffer)
-            from.serviceCmd = cmd
-            from.appId = MAGIC_APP_ID
-            from.setMsgSuccess()
-            from.uin = uin
-            from.appSeq = seq
-            onResponse.invoke(thiz, 0, from, 0)
-        })
-        thizClass.hookMethod("onResponse").before {
-            val from = it.args[1] as FromServiceMsg
-            try {
-                if ("SSO.LoginMerge" == from.serviceCmd) {
-                    val merge = SSOLoginMerge.BusiBuffData()
-                        .mergeFrom(from.wupBuffer.slice(4))
-                    val busiBufVec = merge.BusiBuffVec.get()
-                    busiBufVec.forEach { item ->
-                        if (item.ServiceCmd.get() in IgnoredCmd && ShamrockConfig.isInjectPacket()) {
-                            busiBufVec.remove(item)
-                        } else {
-                            pushOnReceive(FromServiceMsg().apply {
-                                this.requestSsoSeq = item.SeqNo.get()
-                                this.serviceCmd = item.ServiceCmd.get()
-                                putWupBuffer(item.BusiBuff.get().toByteArray())
-                            })
+            if (targetClasses.isEmpty()) {
+                LogCenter.log("[HookWrapperCodec] 未找到 CodecWarpper 具体子类，onResponse 未 hook", Level.ERROR)
+            } else {
+                targetClasses.forEach { clazz ->
+                    clazz.hookMethod("onResponse").before { it ->
+                        LogCenter.log("[HookWrapperCodec] onResponse 触发 cls=${clazz.name} argsLen=${it.args.size}", Level.WARN)
+                        val from = it.args[1] as? FromServiceMsg ?: return@before
+                        try {
+                            if ("SSO.LoginMerge" == from.serviceCmd) {
+                                val merge = SSOLoginMerge.BusiBuffData()
+                                    .mergeFrom(from.wupBuffer.slice(4))
+                                val busiBufVec = merge.BusiBuffVec.get()
+                                busiBufVec.forEach { item ->
+                                    if (item.ServiceCmd.get() in IgnoredCmd && ShamrockConfig.isInjectPacket()) {
+                                        busiBufVec.remove(item)
+                                    } else {
+                                        pushOnReceive(FromServiceMsg().apply {
+                                            this.requestSsoSeq = item.SeqNo.get()
+                                            this.serviceCmd = item.ServiceCmd.get()
+                                            putWupBuffer(item.BusiBuff.get().toByteArray())
+                                        })
+                                    }
+                                }
+                                merge.BusiBuffVec.set(busiBufVec)
+                                from.putWupBuffer(merge.toByteArray())
+                            } else if (from.appId != MAGIC_APP_ID) {
+                                if (from.serviceCmd in IgnoredCmd && ShamrockConfig.isInjectPacket()) {
+                                    from.setBusinessFail(1)
+                                    from.putWupBuffer(EMPTY_BYTE_ARRAY)
+                                } else {
+                                    pushOnReceive(from)
+                                }
+                            }
+                        } finally {
+                            it.args[1] = from
                         }
                     }
-                    merge.BusiBuffVec.set(busiBufVec)
-                    from.putWupBuffer(merge.toByteArray())
-                } else if (from.appId != MAGIC_APP_ID) {
-                    if (from.serviceCmd in IgnoredCmd && ShamrockConfig.isInjectPacket()) {
-                        //from.serviceCmd = "ShamrockInjectedCmd_${from.serviceCmd}"
-                        from.setBusinessFail(1)
-                        from.putWupBuffer(EMPTY_BYTE_ARRAY)
-                    } else {
-                        pushOnReceive(from)
-                    }
+                    LogCenter.log("[HookWrapperCodec] onResponse hook 已安装于 ${clazz.name}", Level.WARN)
                 }
-            } finally {
-                it.args[1] = from
             }
+        } catch (e: Exception) {
+            LogCenter.log("[HookWrapperCodec] invoke 异常: " + e.stackTraceToString(), Level.ERROR)
         }
     }
 

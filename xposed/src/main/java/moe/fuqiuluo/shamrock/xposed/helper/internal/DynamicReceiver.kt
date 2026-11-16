@@ -33,9 +33,11 @@ internal object DynamicReceiver: BroadcastReceiver() {
                             LogCenter.log("无常驻包处理器: $cmd, main = ${PlatformUtils.isMainProcess()}", Level.ERROR)
                     }?.callback?.handle(intent)
                 } else if (hash != -1) {
+                    var matched = false
                     mutex.withLock {
                         hashHandler.removeIf {
                             if (hash == it.hashCode()) {
+                                matched = true
                                 GlobalScope.launch {
                                     it.callback?.handle(intent)
                                 }
@@ -43,6 +45,9 @@ internal object DynamicReceiver: BroadcastReceiver() {
                             }
                             return@removeIf false
                         }
+                    }
+                    if (!matched) {
+                        LogCenter.log("[DynamicReceiver] 收到响应但无匹配 handler hash=$hash 待处理数=${hashHandler.size}", Level.WARN)
                     }
                 }
             } catch (e: Throwable) {
