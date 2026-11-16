@@ -24,15 +24,33 @@ internal object KeepAlive {
     private lateinit var METHOD_IS_KILLED: Method
     private var allowPersistent: Boolean = false
     private var allowAutoStart: Boolean = false
+    private var allowHookDoze: Boolean = false
 
     operator fun invoke(loader: ClassLoader) {
-        val pref = XSharedPreferences("moe.fuqiuluo.shamrock", "shared_config")
-        hookAMS(pref, loader)
-        hookDoze(pref, loader)
+        loadSharedConfig()
+        hookAMS(loader)
+        hookDoze(loader)
     }
 
-    private fun hookDoze(pref: XSharedPreferences, loader: ClassLoader) {
-        if (pref.file.canRead() && pref.getBoolean("hook_doze", false)) {
+    /**
+     * 用 XSharedPreferences 读取模块的 shared_config。
+     * 新版 LSPosed/Vector 会通过 vectord(binder) 帮 system_server 读取模块 prefs，
+     * 即使文件是 MODE_PRIVATE 也能读到；前提是文件在标准 shared_prefs 目录下
+     * （app 侧需直接 File 写标准 shared_prefs/shared_config.xml，绕开 MIUI 的
+     * getSharedPreferences 重定向）。
+     */
+    private fun loadSharedConfig() {
+        val pref = XSharedPreferences("moe.fuqiuluo.shamrock", "shared_config")
+        // 新版 XSharedPreferences 通过 binder 读取，file.canRead() 可能为 false 但仍可读，
+        // 所以不能再用 file.canRead() 做前置判断。
+        allowPersistent = pref.getBoolean("persistent", false)
+        allowAutoStart = pref.getBoolean("enable_auto_start", false)
+        allowHookDoze = pref.getBoolean("hook_doze", false)
+        XposedBridge.log("[Shamrock] loadSharedConfig: allowPersistent=$allowPersistent, allowAutoStart=$allowAutoStart, allowHookDoze=$allowHookDoze, file=${pref.file.absolutePath}")
+    }
+
+    private fun hookDoze(loader: ClassLoader) {
+        if (allowHookDoze) {
             val result = runCatching {
                 val DeviceIdleController = XposedHelpers.findClass("com.android.server.DeviceIdleController", loader)
                     ?: return@runCatching -1
@@ -54,13 +72,13 @@ internal object KeepAlive {
                 }
                 return@runCatching 0
             }.getOrElse { -5 }
-            if(result < 0) {
+            if (result < 0) {
                 XposedBridge.log("[Shamrock] Unable to hookDoze: $result")
             }
         }
     }
 
-    private fun hookAMS(pref: XSharedPreferences, loader: ClassLoader) {
+    private fun hookAMS(loader: ClassLoader) {
         kotlin.runCatching {
             val ActivityManagerService = XposedHelpers.findClass("com.android.server.am.ActivityManagerService", loader)
             ActivityManagerService.hookMethod("newProcessRecordLocked").after {
@@ -70,13 +88,7 @@ internal object KeepAlive {
             XposedBridge.log("[Shamrock] Plan A failed: ${it.message}")
         }
 
-        if (pref.file.canRead()) {
-            allowPersistent = pref.getBoolean("persistent", false)
-            allowAutoStart = pref.getBoolean("enable_auto_start", false)
-            XposedBridge.log("[Shamrock] allowPersistent = $allowPersistent, allowAutoStart = $allowAutoStart")
-        } else {
-            XposedBridge.log("[Shamrock] unable to load XSharedPreferences")
-        }
+        XposedBridge.log("[Shamrock] allowPersistent = $allowPersistent, allowAutoStart = $allowAutoStart")
 
         kotlin.runCatching {
             val ProcessList = XposedHelpers.findClass("com.android.server.am.ProcessList", loader)
@@ -97,7 +109,7 @@ internal object KeepAlive {
                     KeepRecords.forEach {
                         val isKilled = if (::METHOD_IS_KILLED.isInitialized) {
                             kotlin.runCatching {
-                                 METHOD_IS_KILLED.invoke(it) as Boolean
+                                METHOD_IS_KILLED.invoke(it) as Boolean
                             }.getOrElse { false }
                         } else false
                         if (isKilled) {
@@ -138,7 +150,7 @@ internal object KeepAlive {
                 XposedHelpers.findClass("android.app.ActivityThread", null),
                 "currentActivityThread"
             ) as? Context
-            
+
             if (context != null) {
                 val intent = Intent().apply {
                     setComponent(ComponentName("com.tencent.mobileqq", "com.tencent.mobileqq.activity.SplashActivity"))
@@ -161,7 +173,7 @@ internal object KeepAlive {
         val applicationInfo = record.javaClass.getDeclaredField("info").also {
             if (!it.isAccessible) it.isAccessible = true
         }.get(record) as ApplicationInfo
-        if(applicationInfo.processName in KeepPackage) {
+        if (applicationInfo.processName in KeepPackage) {
             XposedBridge.log("[Shamrock] Process is keeping: $record")
             KeepRecords.add(record)
             keepByAdj(record)

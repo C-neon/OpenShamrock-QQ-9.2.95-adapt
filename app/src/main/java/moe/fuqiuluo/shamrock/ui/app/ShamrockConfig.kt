@@ -1,106 +1,272 @@
 package moe.fuqiuluo.shamrock.ui.app
 
 import android.content.Context
-import android.os.Build
 import android.util.Log
 import moe.fuqiuluo.shamrock.ui.service.internal.broadcastToModule
+import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
+import java.io.FileReader
+import java.util.concurrent.ConcurrentHashMap
 
 object ShamrockConfig {
+    private const val CONFIG_FILE_NAME = "shamrock_config.json"
+    private const val SHARED_CONFIG_FILE_NAME = "shared_config.xml"
+    private const val TAG = "ShamrockConfig"
+
+    // 内存缓存，避免频繁读文件
+    private val configCache = ConcurrentHashMap<String, Any?>()
+    private val sharedConfigCache = ConcurrentHashMap<String, Any?>()
+    private var cacheLoaded = false
 
     /**
-     * 将 shared_config.xml 设为 world-readable，以便 system_server (uid 1000) 能通过 XSharedPreferences 读取。
-     * Android 7+ 不再支持 MODE_WORLD_READABLE，但可以在写入后用 File.setReadable(true, false) 实现同等效果。
-     * 同时需要确保 shared_prefs 目录对 other 有执行权限 (0711)。
+     * 确保文件对所有进程可读（system_server / uid 1000 需要读 shared_config）
+     * 父目录需要 executable，文件需要 readable
      */
-    private fun makeSharedConfigWorldReadable(ctx: Context) {
-        val prefsDir = File(ctx.getFilesDir().parent, "shared_prefs")
-        val configFile = File(prefsDir, "shared_config.xml")
-        if (configFile.exists()) {
-            // 目录对 other 可执行 (0711)，文件对 other 可读 (0644)
-            try {
-                prefsDir.setExecutable(true, false)
-                configFile.setReadable(true, false)
-                Log.d("ShamrockConfig", "makeSharedConfigWorldReadable: prefsDir=${prefsDir.absolutePath} canRead=${configFile.canRead()}")
-            } catch (e: Exception) {
-                Log.w("ShamrockConfig", "makeSharedConfigWorldReadable failed", e)
-            }
+    private fun makeWorldReadable(file: File) {
+        try {
+            file.parentFile?.setExecutable(true, false)
+            file.setReadable(true, false)
+            Log.d(TAG, "makeWorldReadable: ${file.absolutePath} canRead=${file.canRead()} canExecute=${file.parentFile?.canExecute()}")
+        } catch (e: Exception) {
+            Log.w(TAG, "makeWorldReadable failed for ${file.absolutePath}", e)
         }
     }
+
+    private fun getConfigFile(ctx: Context): File = File(ctx.filesDir, CONFIG_FILE_NAME)
+
+    /**
+     * shared_config 必须写到标准 shared_prefs 目录、标准 SharedPreferences XML 格式，
+     * 因为 system_server 侧的 KeepAlive 用 XSharedPreferences（通过 vectord binder）读取，
+     * 它只认标准 shared_prefs 路径下的 XML。MIUI 会重定向 getSharedPreferences，
+     * 所以这里用直接 File 写，绕开重定向。
+     */
+    private fun getSharedConfigFile(ctx: Context): File =
+        File(ctx.getFilesDir().parentFile, "shared_prefs/$SHARED_CONFIG_FILE_NAME")
+
+    /**
+     * 加载 config 到内存缓存
+     */
+    private fun loadConfigCache(ctx: Context) {
+        if (cacheLoaded) return
+        val file = getConfigFile(ctx)
+        if (file.exists()) {
+            try {
+                FileReader(file).use { reader ->
+                    val json = JSONObject(reader.readText())
+                    val keys = json.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        configCache[key] = json.get(key)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "loadConfigCache failed", e)
+            }
+        }
+        // 加载 shared_config（标准 SharedPreferences XML）
+        val sharedFile = getSharedConfigFile(ctx)
+        if (sharedFile.exists()) {
+            try {
+                parseSharedPrefsXml(sharedFile.readText()).forEach { (k, v) ->
+                    sharedConfigCache[k] = v
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "loadSharedConfigCache failed", e)
+            }
+        }
+        cacheLoaded = true
+    }
+
+    /**
+     * 同步写入 config 文件
+     */
+    private fun writeConfigFile(ctx: Context) {
+        val file = getConfigFile(ctx)
+        try {
+            val json = JSONObject(configCache)
+            FileOutputStream(file).use { fos ->
+                fos.write(json.toString().toByteArray())
+            }
+            makeWorldReadable(file)
+        } catch (e: Exception) {
+            Log.e(TAG, "writeConfigFile failed", e)
+        }
+    }
+
+    /**
+     * 同步写入 shared_config 文件（标准 SharedPreferences XML 格式）
+     */
+    private fun writeSharedConfigFile(ctx: Context) {
+        val file = getSharedConfigFile(ctx)
+        try {
+            file.parentFile?.mkdirs()
+            val xml = buildSharedPrefsXml(sharedConfigCache)
+            FileOutputStream(file).use { fos ->
+                fos.write(xml.toByteArray(Charsets.UTF_8))
+            }
+            makeWorldReadable(file)
+        } catch (e: Exception) {
+            Log.e(TAG, "writeSharedConfigFile failed", e)
+        }
+    }
+
+    /**
+     * 生成标准 SharedPreferences XML 格式。
+     * 只支持 boolean / int / string 三种类型（本项目 shared_config 只用 boolean）。
+     */
+    private fun buildSharedPrefsXml(map: Map<String, Any?>): String {
+        val sb = StringBuilder()
+        sb.append("<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n")
+        sb.append("<map>\n")
+        map.forEach { (k, v) ->
+            when (v) {
+                is Boolean -> sb.append("    <boolean name=\"$k\" value=\"$v\" />\n")
+                is Int -> sb.append("    <int name=\"$k\" value=\"$v\" />\n")
+                is Long -> sb.append("    <long name=\"$k\" value=\"$v\" />\n")
+                is String -> sb.append("    <string name=\"$k\">$v</string>\n")
+                else -> {}
+            }
+        }
+        sb.append("</map>\n")
+        return sb.toString()
+    }
+
+    /**
+     * 解析标准 SharedPreferences XML（只提取 boolean/int/long/string）。
+     */
+    private fun parseSharedPrefsXml(xml: String): Map<String, Any> {
+        val result = mutableMapOf<String, Any>()
+        // boolean: <boolean name="key" value="true" />
+        Regex("""<boolean name="([^"]+)" value="(true|false)"\s*/>""").findAll(xml).forEach {
+            result[it.groupValues[1]] = it.groupValues[2] == "true"
+        }
+        // int: <int name="key" value="123" />
+        Regex("""<int name="([^"]+)" value="(-?\d+)"\s*/>""").findAll(xml).forEach {
+            result[it.groupValues[1]] = it.groupValues[2].toInt()
+        }
+        // long: <long name="key" value="123" />
+        Regex("""<long name="([^"]+)" value="(-?\d+)"\s*/>""").findAll(xml).forEach {
+            result[it.groupValues[1]] = it.groupValues[2].toLong()
+        }
+        // string: <string name="key">value</string>
+        Regex("""<string name="([^"]+)">([^<]*)</string>""").findAll(xml).forEach {
+            result[it.groupValues[1]] = it.groupValues[2]
+        }
+        return result
+    }
+
+    /** 读取 config 值（带默认值） */
+    private fun <T> getConfig(key: String, default: T): T {
+        return (configCache[key] as? T) ?: default
+    }
+
+    /** 读取 shared_config 值（带默认值） */
+    private fun <T> getSharedConfig(key: String, default: T): T {
+        return (sharedConfigCache[key] as? T) ?: default
+    }
+
+    /** 写入 config 值 */
+    private fun putConfig(key: String, value: Any?) {
+        if (value == null) {
+            configCache.remove(key)
+        } else {
+            configCache[key] = value
+        }
+    }
+
+    /** 写入 shared_config 值 */
+    private fun putSharedConfig(key: String, value: Any?) {
+        if (value == null) {
+            sharedConfigCache.remove(key)
+        } else {
+            sharedConfigCache[key] = value
+        }
+    }
+
+    // ==================== SSL 相关 ====================
     fun getSSLKeyPath(ctx: Context): String {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getString("key_store", "")!!
+        loadConfigCache(ctx)
+        return getConfig("key_store", "")
     }
 
     fun setSSLKeyPath(ctx: Context, path: String) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putString("key_store", path).apply()
+        loadConfigCache(ctx)
+        putConfig("key_store", path)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun getSSLPort(ctx: Context): Int {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getInt("ssl_port", 5701)
+        loadConfigCache(ctx)
+        return getConfig("ssl_port", 5701)
     }
 
     fun setSSLPort(ctx: Context, port: Int) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putInt("ssl_port", port).apply()
+        loadConfigCache(ctx)
+        putConfig("ssl_port", port)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun getSSLAlias(ctx: Context): String {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getString("ssl_alias", "")!!
+        loadConfigCache(ctx)
+        return getConfig("ssl_alias", "")
     }
 
     fun setSSLAlias(ctx: Context, alias: String) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putString("ssl_alias", alias).apply()
+        loadConfigCache(ctx)
+        putConfig("ssl_alias", alias)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun getSSLPwd(ctx: Context): String {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getString("ssl_pwd", "")!!
+        loadConfigCache(ctx)
+        return getConfig("ssl_pwd", "")
     }
 
     fun setSSLPwd(ctx: Context, alias: String) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putString("ssl_pwd", alias).apply()
+        loadConfigCache(ctx)
+        putConfig("ssl_pwd", alias)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun getSSLPrivatePwd(ctx: Context): String {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getString("ssl_private_pwd", "")!!
+        loadConfigCache(ctx)
+        return getConfig("ssl_private_pwd", "")
     }
 
     fun setSSLPrivatePwd(ctx: Context, alias: String) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putString("ssl_private_pwd", alias).apply()
+        loadConfigCache(ctx)
+        putConfig("ssl_private_pwd", alias)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
+    // ==================== HTTP / WS 相关 ====================
     fun getHttpAddr(ctx: Context): String {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getString("http_addr", "")!!
+        loadConfigCache(ctx)
+        return getConfig("http_addr", "")
     }
 
     fun setHttpAddr(ctx: Context, v: String) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putString("http_addr", v).apply()
+        loadConfigCache(ctx)
+        putConfig("http_addr", v)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun isPro(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("pro_api", false)
+        loadConfigCache(ctx)
+        return getConfig("pro_api", false)
     }
 
     fun setPro(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("pro_api", v).apply()
+        loadConfigCache(ctx)
+        putConfig("pro_api", v)
+        writeConfigFile(ctx)
         ctx.broadcastToModule {
             putExtra("type", "restart")
             putExtra("__cmd", "change_port")
@@ -109,90 +275,98 @@ object ShamrockConfig {
     }
 
     fun getToken(ctx: Context): String {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getString("token", null) ?: ""
+        loadConfigCache(ctx)
+        return getConfig("token", "")
     }
 
     fun setToken(ctx: Context, v: String?) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putString("token", v).apply()
+        loadConfigCache(ctx)
+        putConfig("token", v)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun isWs(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("ws", false)
+        loadConfigCache(ctx)
+        return getConfig("ws", false)
     }
 
     fun setWs(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("ws", v).apply()
+        loadConfigCache(ctx)
+        putConfig("ws", v)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun isWsClient(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("ws_client", false)
+        loadConfigCache(ctx)
+        return getConfig("ws_client", false)
     }
 
     fun setWsClient(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("ws_client", v).apply()
+        loadConfigCache(ctx)
+        putConfig("ws_client", v)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun isTablet(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("tablet", false)
+        loadConfigCache(ctx)
+        return getConfig("tablet", false)
     }
 
     fun setTablet(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("tablet", v).apply()
+        loadConfigCache(ctx)
+        putConfig("tablet", v)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun isUseCQCode(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("use_cqcode", false)
+        loadConfigCache(ctx)
+        return getConfig("use_cqcode", false)
     }
 
     fun setUseCQCode(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("use_cqcode", v).apply()
+        loadConfigCache(ctx)
+        putConfig("use_cqcode", v)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun isWebhook(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("webhook", false)
+        loadConfigCache(ctx)
+        return getConfig("webhook", false)
     }
 
     fun setWebhook(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("webhook", v).apply()
+        loadConfigCache(ctx)
+        putConfig("webhook", v)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun getWsAddr(ctx: Context): String {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getString("ws_addr", "")!!
+        loadConfigCache(ctx)
+        return getConfig("ws_addr", "")
     }
 
     fun setWsAddr(ctx: Context, v: String) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putString("ws_addr", v).apply()
+        loadConfigCache(ctx)
+        putConfig("ws_addr", v)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun getHttpPort(ctx: Context): Int {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getInt("port", 5700)
+        loadConfigCache(ctx)
+        return getConfig("port", 5700)
     }
 
     fun setHttpPort(ctx: Context, v: Int) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putInt("port", v).apply()
+        loadConfigCache(ctx)
+        putConfig("port", v)
+        writeConfigFile(ctx)
         ctx.broadcastToModule {
             putExtra("type", "port")
             putExtra("port", v)
@@ -202,13 +376,14 @@ object ShamrockConfig {
     }
 
     fun getWsPort(ctx: Context): Int {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getInt("ws_port", 5800)
+        loadConfigCache(ctx)
+        return getConfig("ws_port", 5800)
     }
 
     fun setWsPort(ctx: Context, v: Int) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putInt("ws_port", v).apply()
+        loadConfigCache(ctx)
+        putConfig("ws_port", v)
+        writeConfigFile(ctx)
         ctx.broadcastToModule {
             putExtra("type", "ws_port")
             putExtra("port", v)
@@ -217,208 +392,226 @@ object ShamrockConfig {
         pushUpdate(ctx)
     }
 
+    // ==================== 其他开关 ====================
     fun is2B(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("2B", false)
+        loadConfigCache(ctx)
+        return getConfig("2B", false)
     }
 
     fun set2B(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("2B", v).apply()
+        loadConfigCache(ctx)
+        putConfig("2B", v)
+        writeConfigFile(ctx)
     }
 
     fun setAutoClean(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("auto_clear", v).apply()
+        loadConfigCache(ctx)
+        putConfig("auto_clear", v)
+        writeConfigFile(ctx)
     }
 
     fun isAutoClean(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("auto_clear", false)
+        loadConfigCache(ctx)
+        return getConfig("auto_clear", false)
     }
 
     fun isDebug(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("debug", false)
+        loadConfigCache(ctx)
+        return getConfig("debug", false)
     }
 
     fun setDebug(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("debug", v).apply()
+        loadConfigCache(ctx)
+        putConfig("debug", v)
+        writeConfigFile(ctx)
     }
 
     fun isAntiTrace(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("anti_qq_trace", true)
+        loadConfigCache(ctx)
+        return getConfig("anti_qq_trace", true)
     }
 
     fun isForbidUselessProcess(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("forbid_useless_process", false)
+        loadConfigCache(ctx)
+        return getConfig("forbid_useless_process", false)
     }
 
     fun setForbidUselessProcess(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("forbid_useless_process", v).apply()
+        loadConfigCache(ctx)
+        putConfig("forbid_useless_process", v)
+        writeConfigFile(ctx)
     }
 
     fun setAntiTrace(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("anti_qq_trace", v).apply()
+        loadConfigCache(ctx)
+        putConfig("anti_qq_trace", v)
+        writeConfigFile(ctx)
     }
 
     fun isInjectPacket(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("inject_packet", false)
+        loadConfigCache(ctx)
+        return getConfig("inject_packet", false)
     }
 
     fun setInjectPacket(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("inject_packet", v).apply()
+        loadConfigCache(ctx)
+        putConfig("inject_packet", v)
+        writeConfigFile(ctx)
     }
 
     fun enableAutoStart(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("enable_auto_start", false)
+        loadConfigCache(ctx)
+        return getConfig("enable_auto_start", false)
     }
 
     fun disableAutoSyncSetting(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("disable_auto_sync_setting", false)
+        loadConfigCache(ctx)
+        return getConfig("disable_auto_sync_setting", false)
     }
 
     fun enableAliveReply(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("alive_reply", false)
+        loadConfigCache(ctx)
+        return getConfig("alive_reply", false)
     }
 
     fun allowShell(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("shell", false)
+        loadConfigCache(ctx)
+        return getConfig("shell", false)
     }
 
     fun setAutoStart(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("enable_auto_start", v).apply()
-        labPrefs(ctx).edit().putBoolean("enable_auto_start", v).apply()
-        makeSharedConfigWorldReadable(ctx)
+        loadConfigCache(ctx)
+        putConfig("enable_auto_start", v)
+        writeConfigFile(ctx)
+        // 同时写入 shared_config，供 KeepAlive (system_server) 读取
+        putSharedConfig("enable_auto_start", v)
+        writeSharedConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun setDisableAutoSyncSetting(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("disable_auto_sync_setting", v).apply()
+        loadConfigCache(ctx)
+        putConfig("disable_auto_sync_setting", v)
+        writeConfigFile(ctx)
     }
 
     fun setAliveReply(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("alive_reply", v).apply()
+        loadConfigCache(ctx)
+        putConfig("alive_reply", v)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun setShellStatus(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("shell", v).apply()
+        loadConfigCache(ctx)
+        putConfig("shell", v)
+        writeConfigFile(ctx)
     }
 
     fun enableSelfMsg(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("enable_self_msg", false)
+        loadConfigCache(ctx)
+        return getConfig("enable_self_msg", false)
     }
 
     fun enableSyncMsgAsSentMsg(ctx: Context): Boolean {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        return preferences.getBoolean("enable_sync_msg_as_sent_msg", false)
+        loadConfigCache(ctx)
+        return getConfig("enable_sync_msg_as_sent_msg", false)
     }
 
-    /*
-     * Lab 页的三个实验开关。
-     *
-     * 历史上这两个开关写在 shared_config 里并强制 MODE_WORLD_READABLE，
-     * Android 7+ 下 getSharedPreferences 直接抛 SecurityException，开关永远不可用。
-     * 现在改成：shared_config 用 MODE_PRIVATE 正常写入（LSPosed 的 XSharedPreferences
-     * 依然能读到，供系统进程侧的 KeepAlive 使用），同时写一份到常规 config 里，
-     * 通过 push_config 同步进 QQ 进程的 MMKV。
-     */
-    private fun labPrefs(ctx: Context) = ctx.getSharedPreferences("shared_config", Context.MODE_PRIVATE)
-
-    fun isPersistent(ctx: Context): Boolean =
-        labPrefs(ctx).getBoolean("persistent", false) ||
-                ctx.getSharedPreferences("config", 0).getBoolean("persistent", false)
+    // ==================== Lab 页三个实验开关（同时写 config 和 shared_config）====================
+    fun isPersistent(ctx: Context): Boolean {
+        loadConfigCache(ctx)
+        return getSharedConfig("persistent", false) || getConfig("persistent", false)
+    }
 
     fun setPersistent(ctx: Context, v: Boolean) {
-        labPrefs(ctx).edit().putBoolean("persistent", v).apply()
-        makeSharedConfigWorldReadable(ctx)
-        ctx.getSharedPreferences("config", 0).edit().putBoolean("persistent", v).apply()
+        loadConfigCache(ctx)
+        putSharedConfig("persistent", v)
+        writeSharedConfigFile(ctx)
+        putConfig("persistent", v)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
-    fun isHookDoze(ctx: Context): Boolean =
-        labPrefs(ctx).getBoolean("hook_doze", false) ||
-                ctx.getSharedPreferences("config", 0).getBoolean("hook_doze", false)
+    fun isHookDoze(ctx: Context): Boolean {
+        loadConfigCache(ctx)
+        return getSharedConfig("hook_doze", false) || getConfig("hook_doze", false)
+    }
 
     fun setHookDoze(ctx: Context, v: Boolean) {
-        labPrefs(ctx).edit().putBoolean("hook_doze", v).apply()
-        makeSharedConfigWorldReadable(ctx)
-        ctx.getSharedPreferences("config", 0).edit().putBoolean("hook_doze", v).apply()
+        loadConfigCache(ctx)
+        putSharedConfig("hook_doze", v)
+        writeSharedConfigFile(ctx)
+        putConfig("hook_doze", v)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
-    fun isSuperAnti(ctx: Context): Boolean =
-        labPrefs(ctx).getBoolean("super_anti", false) ||
-                ctx.getSharedPreferences("config", 0).getBoolean("super_anti", false)
+    fun isSuperAnti(ctx: Context): Boolean {
+        loadConfigCache(ctx)
+        return getSharedConfig("super_anti", false) || getConfig("super_anti", false)
+    }
 
     fun setSuperAnti(ctx: Context, v: Boolean) {
-        labPrefs(ctx).edit().putBoolean("super_anti", v).apply()
-        makeSharedConfigWorldReadable(ctx)
-        ctx.getSharedPreferences("config", 0).edit().putBoolean("super_anti", v).apply()
+        loadConfigCache(ctx)
+        putSharedConfig("super_anti", v)
+        writeSharedConfigFile(ctx)
+        putConfig("super_anti", v)
+        writeConfigFile(ctx)
         pushUpdate(ctx)
     }
 
     fun setEnableSelfMsg(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("enable_self_msg", v).apply()
+        loadConfigCache(ctx)
+        putConfig("enable_self_msg", v)
+        writeConfigFile(ctx)
     }
 
     fun setEnableSyncMsgAsSentMsg(ctx: Context, v: Boolean) {
-        val preferences = ctx.getSharedPreferences("config", 0)
-        preferences.edit().putBoolean("enable_sync_msg_as_sent_msg", v).apply()
+        loadConfigCache(ctx)
+        putConfig("enable_sync_msg_as_sent_msg", v)
+        writeConfigFile(ctx)
     }
 
+    // ==================== 导出完整配置映射（供 pushUpdate 广播） ====================
     fun getConfigMap(ctx: Context): Map<String, Any?> {
-        val preferences = ctx.getSharedPreferences("config", 0)
+        loadConfigCache(ctx)
+        // 合并 config 和 shared_config（shared_config 优先，保持原有行为）
+        val merged = mutableMapOf<String, Any?>()
+        configCache.forEach { (k, v) -> merged[k] = v }
+        sharedConfigCache.forEach { (k, v) -> merged[k] = v }
+
         return mapOf(
-            "tablet" to preferences.getBoolean("tablet", false),
-            "port" to preferences.getInt("port", 5700),
-            "ws" to preferences.getBoolean("ws", false),
-            "ws_port" to preferences.getInt("ws_port", 5800),
-            "ssl_port" to preferences.getInt("ssl_port", 5701),
-            "http" to preferences.getBoolean("webhook", false),
-            "http_addr" to preferences.getString("http_addr", ""),
-            "ws_client" to preferences.getBoolean("ws_client", false),
-            "use_cqcode" to preferences.getBoolean("use_cqcode", false),
-            "ws_addr" to preferences.getString("ws_addr", ""),
-            "ssl_alias" to preferences.getString("ssl_alias", ""),
-            "pro_api" to preferences.getBoolean("pro_api", false),
-            "token" to preferences.getString("token", null),
-            "ssl_pwd" to preferences.getString("ssl_pwd", ""),
-            "inject_packet" to preferences.getBoolean("inject_packet", false),
-            "debug" to preferences.getBoolean("debug", false),
-            "anti_qq_trace" to preferences.getBoolean("anti_qq_trace", true),
-            //"auto_clear" to preferences.getBoolean("auto_clear", false),
-            "ssl_private_pwd" to preferences.getString("ssl_private_pwd", ""),
-            "key_store" to preferences.getString("key_store", ""),
-            "enable_self_msg" to preferences.getBoolean("enable_self_msg", false),
-            "echo_number" to preferences.getBoolean("echo_number", false),
-            "shell" to preferences.getBoolean("shell", false),
-            "alive_reply" to preferences.getBoolean("alive_reply", false),
-            "enable_sync_msg_as_sent_msg" to preferences.getBoolean("enable_sync_msg_as_sent_msg", false),
-            "disable_auto_sync_setting" to preferences.getBoolean("disable_auto_sync_setting", false),
-            "forbid_useless_process" to preferences.getBoolean("forbid_useless_process", false),
-            "persistent" to preferences.getBoolean("persistent", false),
-            "hook_doze" to preferences.getBoolean("hook_doze", false),
-            "super_anti" to preferences.getBoolean("super_anti", false),
-            "enable_auto_start" to preferences.getBoolean("enable_auto_start", false)
+            "tablet" to merged.getOrDefault("tablet", false),
+            "port" to merged.getOrDefault("port", 5700),
+            "ws" to merged.getOrDefault("ws", false),
+            "ws_port" to merged.getOrDefault("ws_port", 5800),
+            "ssl_port" to merged.getOrDefault("ssl_port", 5701),
+            "http" to merged.getOrDefault("webhook", false),
+            "http_addr" to merged.getOrDefault("http_addr", ""),
+            "ws_client" to merged.getOrDefault("ws_client", false),
+            "use_cqcode" to merged.getOrDefault("use_cqcode", false),
+            "ws_addr" to merged.getOrDefault("ws_addr", ""),
+            "ssl_alias" to merged.getOrDefault("ssl_alias", ""),
+            "pro_api" to merged.getOrDefault("pro_api", false),
+            "token" to merged.getOrDefault("token", ""),
+            "ssl_pwd" to merged.getOrDefault("ssl_pwd", ""),
+            "inject_packet" to merged.getOrDefault("inject_packet", false),
+            "debug" to merged.getOrDefault("debug", false),
+            "anti_qq_trace" to merged.getOrDefault("anti_qq_trace", true),
+            "ssl_private_pwd" to merged.getOrDefault("ssl_private_pwd", ""),
+            "key_store" to merged.getOrDefault("key_store", ""),
+            "enable_self_msg" to merged.getOrDefault("enable_self_msg", false),
+            "echo_number" to merged.getOrDefault("echo_number", false),
+            "shell" to merged.getOrDefault("shell", false),
+            "alive_reply" to merged.getOrDefault("alive_reply", false),
+            "enable_sync_msg_as_sent_msg" to merged.getOrDefault("enable_sync_msg_as_sent_msg", false),
+            "disable_auto_sync_setting" to merged.getOrDefault("disable_auto_sync_setting", false),
+            "forbid_useless_process" to merged.getOrDefault("forbid_useless_process", false),
+            "persistent" to merged.getOrDefault("persistent", false),
+            "hook_doze" to merged.getOrDefault("hook_doze", false),
+            "super_anti" to merged.getOrDefault("super_anti", false),
+            "enable_auto_start" to merged.getOrDefault("enable_auto_start", false)
         )
     }
 
