@@ -2,7 +2,6 @@ package moe.fuqiuluo.shamrock.helper
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import androidx.core.os.bundleOf
 import kotlin.math.max
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,13 +10,12 @@ import kotlinx.coroutines.withContext
  * 图片压缩工具类。
  * 规则：
  * 1. < 200KB 直接返回原字节（小图不重编码）
- * 2. JPEG (FF D8) 直接返回原字节（已压缩格式，避免二次损耗）
- * 3. PNG/GIF/BMP/WEBP 走解码压缩：
+ * 2. >= 200KB 一律解码压缩（含 JPEG，确保跨国链路上传不超过 20s）：
  *    - 读宽高，max(宽,高) > 2048 时计算 inSampleSize (2的幂) 降采样
  *    - 有 alpha 通道 → WEBP lossy quality 80 (API 31+)，fallback JPEG
  *    - 无 alpha 通道 → JPEG quality 80
- * 4. 压缩后 >= 原字节 → 返回原字节（负优化保护）
- * 5. 全程在 IO 线程跑，bitmap.recycle() 释放内存
+ * 3. 压缩后 >= 原字节 → 返回原字节（负优化保护）
+ * 4. 全程在 IO 线程跑，bitmap.recycle() 释放内存
  */
 internal object CompressImageUtil {
 
@@ -31,7 +29,6 @@ internal object CompressImageUtil {
      * @param bytes 原始图片字节
      * @return 压缩后的字节数组（可能返回原数组）
      */
-    @Suppress("UNUSED_PARAMETER")
     suspend fun compressIfNeeded(bytes: ByteArray): ByteArray = withContext(Dispatchers.IO) {
         val originalSize = bytes.size.toLong()
 
@@ -43,10 +40,6 @@ internal object CompressImageUtil {
 
         // 2. 魔数检测格式
         val format = detectFormat(bytes)
-        if (format == ImageFormat.JPEG) {
-            LogCenter.log("[$TAG] JPEG 已压缩格式跳过: ${formatBytes(originalSize)}", Level.DEBUG)
-            return@withContext bytes
-        }
 
         // 3. 解码 Bitmap（带降采样）
         val bitmap = decodeBitmapWithSampling(bytes)
