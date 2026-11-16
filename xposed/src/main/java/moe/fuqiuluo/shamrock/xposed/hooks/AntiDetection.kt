@@ -62,11 +62,7 @@ class AntiDetection: IAction {
 
     private fun antiNativeDetection() {
         try {
-            val pref = XSharedPreferences("moe.fuqiuluo.shamrock", "shared_config")
-            if (!pref.file.canRead()) {
-                LogCenter.log("[Shamrock] unable to load XSharedPreferences", Level.WARN)
-                return
-            } else if (!pref.getBoolean("super_anti", false)) {
+            if (!ShamrockConfig.isSuperAnti()) {
                 return
             }
             //System.loadLibrary("clover")

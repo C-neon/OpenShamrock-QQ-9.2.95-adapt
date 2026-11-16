@@ -304,6 +304,47 @@ object ShamrockConfig {
         return preferences.getBoolean("enable_sync_msg_as_sent_msg", false)
     }
 
+    /*
+     * Lab 页的三个实验开关。
+     *
+     * 历史上这两个开关写在 shared_config 里并强制 MODE_WORLD_READABLE，
+     * Android 7+ 下 getSharedPreferences 直接抛 SecurityException，开关永远不可用。
+     * 现在改成：shared_config 用 MODE_PRIVATE 正常写入（LSPosed 的 XSharedPreferences
+     * 依然能读到，供系统进程侧的 KeepAlive 使用），同时写一份到常规 config 里，
+     * 通过 push_config 同步进 QQ 进程的 MMKV。
+     */
+    private fun labPrefs(ctx: Context) = ctx.getSharedPreferences("shared_config", Context.MODE_PRIVATE)
+
+    fun isPersistent(ctx: Context): Boolean =
+        labPrefs(ctx).getBoolean("persistent", false) ||
+                ctx.getSharedPreferences("config", 0).getBoolean("persistent", false)
+
+    fun setPersistent(ctx: Context, v: Boolean) {
+        labPrefs(ctx).edit().putBoolean("persistent", v).apply()
+        ctx.getSharedPreferences("config", 0).edit().putBoolean("persistent", v).apply()
+        pushUpdate(ctx)
+    }
+
+    fun isHookDoze(ctx: Context): Boolean =
+        labPrefs(ctx).getBoolean("hook_doze", false) ||
+                ctx.getSharedPreferences("config", 0).getBoolean("hook_doze", false)
+
+    fun setHookDoze(ctx: Context, v: Boolean) {
+        labPrefs(ctx).edit().putBoolean("hook_doze", v).apply()
+        ctx.getSharedPreferences("config", 0).edit().putBoolean("hook_doze", v).apply()
+        pushUpdate(ctx)
+    }
+
+    fun isSuperAnti(ctx: Context): Boolean =
+        labPrefs(ctx).getBoolean("super_anti", false) ||
+                ctx.getSharedPreferences("config", 0).getBoolean("super_anti", false)
+
+    fun setSuperAnti(ctx: Context, v: Boolean) {
+        labPrefs(ctx).edit().putBoolean("super_anti", v).apply()
+        ctx.getSharedPreferences("config", 0).edit().putBoolean("super_anti", v).apply()
+        pushUpdate(ctx)
+    }
+
     fun setEnableSelfMsg(ctx: Context, v: Boolean) {
         val preferences = ctx.getSharedPreferences("config", 0)
         preferences.edit().putBoolean("enable_self_msg", v).apply()
@@ -343,7 +384,10 @@ object ShamrockConfig {
             "alive_reply" to preferences.getBoolean("alive_reply", false),
             "enable_sync_msg_as_sent_msg" to preferences.getBoolean("enable_sync_msg_as_sent_msg", false),
             "disable_auto_sync_setting" to preferences.getBoolean("disable_auto_sync_setting", false),
-            "forbid_useless_process" to preferences.getBoolean("forbid_useless_process", false)
+            "forbid_useless_process" to preferences.getBoolean("forbid_useless_process", false),
+            "persistent" to preferences.getBoolean("persistent", false),
+            "hook_doze" to preferences.getBoolean("hook_doze", false),
+            "super_anti" to preferences.getBoolean("super_anti", false)
         )
     }
 

@@ -151,32 +151,26 @@ fun LabFragment() {
                     return@Function true
                 }
 
-                kotlin.runCatching {
-                    ctx.getSharedPreferences("shared_config", Context.MODE_WORLD_READABLE)
-                }.onSuccess {
-                    Function(
-                        title = LocalString.persistentText,
-                        desc = LocalString.persistentTextDesc,
-                        descColor = color,
-                        isSwitch = it.getBoolean("persistent", false)
-                    ) { v ->
-                        it.edit().putBoolean("persistent", v).apply()
-                        scope.toast(ctx, LocalString.restartSysToast)
-                        return@Function true
-                    }
+                Function(
+                    title = LocalString.persistentText,
+                    desc = LocalString.persistentTextDesc,
+                    descColor = color,
+                    isSwitch = ShamrockConfig.isPersistent(ctx)
+                ) { v ->
+                    ShamrockConfig.setPersistent(ctx, v)
+                    scope.toast(ctx, LocalString.restartSysToast)
+                    return@Function true
+                }
 
-                    Function(
-                        title = "禁用Doze模式",
-                        desc = "禁止系统进入节能模式。",
-                        descColor = color,
-                        isSwitch = it.getBoolean("hook_doze", false)
-                    ) { value ->
-                        it.edit().putBoolean("hook_doze", value).apply()
-                        scope.toast(ctx, LocalString.restartSysToast)
-                        return@Function true
-                    }
-                }.onFailure {
-                    AppRuntime.log("无法启用附加选项，LSPosed模块未激活或者不支持XSharedPreferences", Level.WARN)
+                Function(
+                    title = "禁用Doze模式",
+                    desc = "禁止系统进入节能模式。",
+                    descColor = color,
+                    isSwitch = ShamrockConfig.isHookDoze(ctx)
+                ) { value ->
+                    ShamrockConfig.setHookDoze(ctx, value)
+                    scope.toast(ctx, LocalString.restartSysToast)
+                    return@Function true
                 }
             }
 
@@ -216,19 +210,15 @@ fun LabFragment() {
                     return@Function true
                 }
 
-                kotlin.runCatching {
-                    ctx.getSharedPreferences("shared_config", Context.MODE_WORLD_READABLE)
-                }.onSuccess {
-                    Function(
-                        title = "反检测加强",
-                        desc = "可能导致某些设备频繁闪退",
-                        descColor = color,
-                        isSwitch = it.getBoolean("super_anti", false)
-                    ) { v ->
-                        it.edit().putBoolean("super_anti", v).apply()
-                        scope.toast(ctx, LocalString.restartToast)
-                        return@Function true
-                    }
+                Function(
+                    title = "反检测加强",
+                    desc = "可能导致某些设备频繁闪退",
+                    descColor = color,
+                    isSwitch = ShamrockConfig.isSuperAnti(ctx)
+                ) { v ->
+                    ShamrockConfig.setSuperAnti(ctx, v)
+                    scope.toast(ctx, LocalString.restartToast)
+                    return@Function true
                 }
             }
         }

@@ -17,7 +17,15 @@ data class ImageMapping (
     @PrimaryKey
     val fileName: String,
     val chatType: Int,
-    val size: Long
+    val size: Long,
+    /** 图片所属会话(群号/好友uin)，用于构造图片下载请求 */
+    val peerUin: String = "",
+    /** QQ 图片服务器使用的文件标识(uuid) */
+    val fileUuid: String = "",
+    /** QQ 自己给出的原图地址(可能为空) */
+    val originUrl: String = "",
+    /** QQ 本地已缓存的图片路径(可能为空) */
+    val sourcePath: String = ""
 )
 
 @Dao
@@ -29,7 +37,8 @@ interface ImageMappingDao {
     fun queryByFileName(fileName: String): ImageMapping?
 }
 
-@Database(entities = [ImageMapping::class], version = 1)
+// 缓存表，版本升级时直接重建即可
+@Database(entities = [ImageMapping::class], version = 2)
 internal abstract class ImageDB: RoomDatabase() {
     abstract fun imageMappingDao(): ImageMappingDao
 
@@ -44,7 +53,9 @@ internal abstract class ImageDB: RoomDatabase() {
                 synchronized(ImageDB::class) {
                     if (instance == null) {
                         ImageDB
-                        instance = Room.databaseBuilder(MobileQQ.getContext(), ImageDB::class.java, DB_NAME).build()
+                        instance = Room.databaseBuilder(MobileQQ.getContext(), ImageDB::class.java, DB_NAME)
+                            .fallbackToDestructiveMigration()
+                            .build()
                     }
                 }
             }

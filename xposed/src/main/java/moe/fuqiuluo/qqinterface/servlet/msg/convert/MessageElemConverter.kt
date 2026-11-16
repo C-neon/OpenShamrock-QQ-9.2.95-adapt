@@ -132,7 +132,15 @@ internal sealed class MessageElemConverter: IMessageConvert {
                 .replace("-", "").split(".")[0]
 
             ImageDB.getInstance().imageMappingDao().insert(
-                ImageMapping(md5.uppercase(), chatType, image.fileSize)
+                ImageMapping(
+                    md5.uppercase(),
+                    chatType,
+                    image.fileSize,
+                    peerUin = peerId,
+                    fileUuid = image.fileUuid ?: "",
+                    originUrl = image.originImageUrl ?: "",
+                    sourcePath = image.sourcePath ?: ""
+                )
             )
 
             return MessageSegment(

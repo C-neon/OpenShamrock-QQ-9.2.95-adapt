@@ -12,10 +12,11 @@ import mqq.app.MobileQQ
 import java.io.File
 
 internal object ShamrockConfig {
+    // 注意：这里不能删除目录，否则 config.json 每次进程重启都会被清空，
+    // token / ws 地址 / 规则等仅在 json 中保存的配置将全部丢失（issue #1）。
     private val ConfigDir = MobileQQ.getContext().getExternalFilesDir(null)!!
         .parentFile!!.resolve("Tencent/Shamrock").also {
-            if (it.exists()) it.delete()
-            it.mkdirs()
+            if (!it.exists()) it.mkdirs()
         }
     private val Config = kotlin.runCatching {
         GlobalJson5.decodeFromString<ServiceConfig>(ConfigDir.resolve("config.json").also {
@@ -77,6 +78,17 @@ internal object ShamrockConfig {
                 putBoolean("shell",        intent.getBooleanExtra("shell", false))                  // 开启Shell接口
                 putBoolean("enable_sync_msg_as_sent_msg", intent.getBooleanExtra("enable_sync_msg_as_sent_msg", false)) // 推送同步消息
                 putBoolean("forbid_useless_process", intent.getBooleanExtra("forbid_useless_process", false)) // 禁用QQ生成无用进程
+                // Lab 页三个实验开关：以前只走 XSharedPreferences，Android 7+ 读不到，
+                // 现在随 push_config 一起同步到 MMKV，进程内可以可靠读取。
+                if (intent.hasExtra("persistent")) {
+                    putBoolean("persistent", intent.getBooleanExtra("persistent", false)) // 免死金牌
+                }
+                if (intent.hasExtra("hook_doze")) {
+                    putBoolean("hook_doze", intent.getBooleanExtra("hook_doze", false))    // 禁用Doze模式
+                }
+                if (intent.hasExtra("super_anti")) {
+                    putBoolean("super_anti", intent.getBooleanExtra("super_anti", false))  // 反检测加强
+                }
             }
             Config.defaultToken = intent.getStringExtra("token")
             Config.antiTrace = intent.getBooleanExtra("anti_qq_trace", true)
@@ -237,4 +249,25 @@ internal object ShamrockConfig {
     fun allowShell(): Boolean {
         return mmkv.getBoolean("shell", false)
     }
+
+    /**
+     * Lab 页的三个实验开关。新版本由 app 侧 push_config 写入 MMKV，优先读 MMKV；
+     * 读不到时回退到老的 XSharedPreferences(兼容旧配置/系统进程侧写入)。
+     */
+    private fun labSwitch(key: String): Boolean {
+        val fromMmkv = kotlin.runCatching {
+            if (mmkv.contains(key)) mmkv.getBoolean(key, false) else null
+        }.getOrNull()
+        if (fromMmkv != null) return fromMmkv
+        return kotlin.runCatching {
+            val pref = de.robv.android.xposed.XSharedPreferences("moe.fuqiuluo.shamrock", "shared_config")
+            pref.file.canRead() && pref.getBoolean(key, false)
+        }.getOrDefault(false)
+    }
+
+    fun isPersistent(): Boolean = labSwitch("persistent")
+
+    fun isHookDoze(): Boolean = labSwitch("hook_doze")
+
+    fun isSuperAnti(): Boolean = labSwitch("super_anti")
 }

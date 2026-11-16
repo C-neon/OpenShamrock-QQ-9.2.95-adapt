@@ -4,6 +4,7 @@ import com.tencent.qqnt.kernel.nativeinterface.MsgConstant
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import moe.fuqiuluo.qqinterface.servlet.transfile.RichProtoSvc
+import moe.fuqiuluo.shamrock.helper.PicFetcher
 import moe.fuqiuluo.shamrock.helper.db.ImageDB
 import moe.fuqiuluo.shamrock.remote.action.ActionSession
 import moe.fuqiuluo.shamrock.remote.action.IActionHandler
@@ -18,7 +19,7 @@ internal object GetImage: IActionHandler() {
         return invoke(file, echo)
     }
 
-    operator fun invoke(file: String, echo: JsonElement = EmptyJsonString): String {
+    suspend operator fun invoke(file: String, echo: JsonElement = EmptyJsonString): String {
         val fileMd5 = file
             .replace("{", "")
             .replace("}", "")
@@ -31,14 +32,30 @@ internal object GetImage: IActionHandler() {
         val image = ImageDB.getInstance().imageMappingDao().queryByFileName(fileMd5)
             ?: return logic("只能查询已缓存的图片", echo = echo)
 
+        // 先尝试真正把图片字节取回来（本地缓存 / 原图地址 / QQ 图片下载协议）
+        val payload = PicFetcher.fetch(image, fileMd5)
+
+        // 取不到字节时，尽量给出一个理论上可用的地址，保持老行为不变
+        val fallbackUrl = when (image.chatType) {
+            MsgConstant.KCHATTYPEGROUP -> RichProtoSvc.getGroupPicDownUrl(fileMd5)
+            MsgConstant.KCHATTYPEC2C -> RichProtoSvc.getC2CPicDownUrl(fileMd5)
+            else -> error("Not supported chat type: ${image.chatType}, convertMsgElementsToMsgSegment::Pic")
+        }
+
+        if (payload == null) {
+            return ok(GetImageResult(
+                image.size,
+                image.fileName,
+                fallbackUrl
+            ), echo = echo)
+        }
+
         return ok(GetImageResult(
-            image.size,
+            payload.bytes.size.toLong(),
             image.fileName,
-            when(image.chatType) {
-                MsgConstant.KCHATTYPEGROUP -> RichProtoSvc.getGroupPicDownUrl(fileMd5)
-                MsgConstant.KCHATTYPEC2C -> RichProtoSvc.getC2CPicDownUrl(fileMd5)
-                else -> error("Not supported chat type: ${image.chatType}, convertMsgElementsToMsgSegment::Pic")
-            }
+            payload.url,
+            PicFetcher.toBase64(payload.bytes),
+            payload.source
         ), echo = echo)
     }
 
@@ -48,6 +65,10 @@ internal object GetImage: IActionHandler() {
     data class GetImageResult(
         val size: Long,
         val filename: String,
-        val url: String
+        val url: String,
+        /** 图片内容的 base64（取到字节时才有），可直接落盘成图片 */
+        val base64: String? = null,
+        /** 字节来源: source_path / local_cache / origin_url / rich_proto / legacy_url */
+        val source: String? = null
     )
 }

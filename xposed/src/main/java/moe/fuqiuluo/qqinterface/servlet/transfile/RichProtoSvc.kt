@@ -7,6 +7,7 @@ import com.tencent.mobileqq.transfile.api.IProtoReqManager
 import com.tencent.mobileqq.transfile.protohandler.RichProto
 import com.tencent.mobileqq.transfile.protohandler.RichProtoProc
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
@@ -139,6 +140,110 @@ internal object RichProtoSvc: BaseSvc() {
 
             return "$domain$params&isthumb=0&client_proto=qq&client_appid=$appId&client_type=android&client_ver=$version&client_down_type=auto&client_aio_type=unk"
         }
+    }
+
+    /**
+     * 群图片下载地址。走 QQ 自己的图片下载协议(GRP_PIC_DW)，
+     * 这样返回的是服务器签名过的完整下载地址，不再依赖手工拼 uin 段。
+     */
+    suspend fun getGroupPicDownUrl(
+        peerId: String,
+        md5: String,
+        msgTime: Int = 0
+    ): String {
+        if (md5.length != 32) return ""
+        return withTimeoutOrNull(6000L) {
+            suspendCancellableCoroutine { cont ->
+                val runtime = AppRuntimeFetcher.appRuntime
+                runCatching {
+                    val richProtoReq = RichProto.RichProtoReq()
+                    val downReq = RichProto.RichProtoReq.GroupPicDownReq()
+                    downReq.selfUin = runtime.currentAccountUin
+                    downReq.peerUin = if (peerId.isBlank() || peerId == "0")
+                        runtime.currentAccountUin else peerId
+                    downReq.secondUin = downReq.peerUin
+                    downReq.uinType = FileMsg.UIN_TROOP
+                    downReq.md5 = md5.hex2ByteArray()
+                    downReq.fileType = FileMsg.TRANSFILE_TYPE_PIC
+                    downReq.msgTime = msgTime
+                    downReq.protocolType = 1
+                    richProtoReq.callback = RichProtoProc.RichProtoCallback { _, resp ->
+                        val picResp = resp.resps.firstOrNull() as? RichProto.RichProtoResp.PicDownResp
+                        if (picResp == null || picResp.errCode != 0) {
+                            LogCenter.log("requestDownGroupPic: ${resp.resps.firstOrNull()?.errCode}", Level.WARN)
+                            if (cont.isActive) cont.resume("")
+                        } else {
+                            val url = buildPicDownUrl(picResp)
+                            LogCenter.log("requestDownGroupPic: $url", Level.DEBUG)
+                            if (cont.isActive) cont.resume(url)
+                        }
+                    }
+                    richProtoReq.protoKey = RichProtoProc.GRP_PIC_DW
+                    richProtoReq.reqs.add(downReq)
+                    richProtoReq.protoReqMgr = runtime.getRuntimeService(IProtoReqManager::class.java, "all")
+                    RichProtoProc.procRichProtoReq(richProtoReq)
+                }.onFailure {
+                    LogCenter.log("requestDownGroupPic failed: ${it.message}", Level.WARN)
+                    if (cont.isActive) cont.resume("")
+                }
+            }
+        } ?: ""
+    }
+
+    /**
+     * 好友图片下载地址。C2C 图片协议只认 uuid，拿不到 uuid 时直接返回空串。
+     */
+    suspend fun getC2CPicDownUrl(
+        peerId: String,
+        md5: String,
+        fileUuid: String
+    ): String {
+        if (fileUuid.isBlank()) return ""
+        return withTimeoutOrNull(6000L) {
+            suspendCancellableCoroutine { cont ->
+                val runtime = AppRuntimeFetcher.appRuntime
+                runCatching {
+                    val richProtoReq = RichProto.RichProtoReq()
+                    val downReq = RichProto.RichProtoReq.C2CPicDownReq()
+                    downReq.selfUin = runtime.currentAccountUin
+                    downReq.peerUin = if (peerId.isBlank() || peerId == "0")
+                        runtime.currentAccountUin else peerId
+                    downReq.secondUin = downReq.peerUin
+                    downReq.uinType = FileMsg.UIN_BUDDY
+                    downReq.uuid = fileUuid
+                    downReq.fileType = FileMsg.TRANSFILE_TYPE_PIC
+                    downReq.protocolType = 1
+                    downReq.isContact = false
+                    richProtoReq.callback = RichProtoProc.RichProtoCallback { _, resp ->
+                        val picResp = resp.resps.firstOrNull() as? RichProto.RichProtoResp.PicDownResp
+                        if (picResp == null || picResp.errCode != 0) {
+                            LogCenter.log("requestDownC2CPic: ${resp.resps.firstOrNull()?.errCode}", Level.WARN)
+                            if (cont.isActive) cont.resume("")
+                        } else {
+                            val url = buildPicDownUrl(picResp)
+                            LogCenter.log("requestDownC2CPic: $url", Level.DEBUG)
+                            if (cont.isActive) cont.resume(url)
+                        }
+                    }
+                    richProtoReq.protoKey = RichProtoProc.C2C_PIC_DW
+                    richProtoReq.reqs.add(downReq)
+                    richProtoReq.protoReqMgr = runtime.getRuntimeService(IProtoReqManager::class.java, "all")
+                    RichProtoProc.procRichProtoReq(richProtoReq)
+                }.onFailure {
+                    LogCenter.log("requestDownC2CPic failed: ${it.message}", Level.WARN)
+                    if (cont.isActive) cont.resume("")
+                }
+            }
+        } ?: ""
+    }
+
+    private fun buildPicDownUrl(resp: RichProto.RichProtoResp.PicDownResp): String {
+        val path = resp.urlPath ?: ""
+        if (path.isBlank()) return ""
+        val base = resp.mIpList.firstOrNull()?.getServerUrl("http://")
+            ?: resp.domain?.takeIf { it.isNotBlank() }?.let { "http://$it/" }
+            ?: return ""
+        return base + path.trimStart('/')
     }
 
     fun getGroupPicDownUrl(
