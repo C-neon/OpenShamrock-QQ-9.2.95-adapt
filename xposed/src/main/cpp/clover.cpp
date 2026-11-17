@@ -115,49 +115,9 @@ FILE* fake_fopen(const char *filename, const char *mode) {
     return backup_fopen(filename, mode);
 }
 
-char * __cdecl my_strstr(const char *lhs, const char *rhs) {
-    char *cur = (char *)lhs;
-    char *l;
-    char *r;
-    if (!*rhs) {
-        return ((char *)lhs);
-    }
-    while (*cur) {
-        l = cur;
-        r = (char *)rhs;
-        while (*r && !(*l - *r)) {
-            l++;
-            r++;
-        }
-        if (!*r) {
-            return cur;
-        }
-        cur++;
-    }
-    return nullptr;
-}
-
-int fake_memcmp(const void* __lhs, const void* __rhs, size_t __n) {
-    if (__lhs == nullptr || __rhs == nullptr) {
-        if (__n != 0) {
-            LOGI("[Shamrock] undefined behaviour in fake_memcmp");
-        }
-        return 0;
-    }
-    if (my_strstr((const char*) __rhs, "shamrock") && my_strstr((const char*) __lhs, "shamrock")) {
-        if (backup_memcmp(__lhs, __rhs, __n) == 0) {
-            // 底层广播判断
-            return 0;
-        } else {
-            LOGI("[Shamrock] QQ好像正在寻找Shamrock");
-        }
-        return -1;
-    }
-    //if (my_strstr((const char*) __rhs, "riru") && my_strstr((const char*) __lhs, "riru")) {
-    //    return -1;
-    //}
-    return backup_memcmp(__lhs, __rhs, __n);
-}
+// 注：memcmp hook 已禁用。原实现对任意二进制内存跑 my_strstr（假定 \0 结尾），
+// 内存块不含 \0 时会越界读取导致崩溃，是反检测加强在低端机闪退的主要风险源。
+// 且 memcmp 是高频热路径，hook 性能开销大。保留 system_property_get + fopen 两个安全 hook。
 
 void on_library_loaded(const char *name, void *handle) {
 
@@ -178,8 +138,9 @@ Java_moe_fuqiuluo_shamrock_xposed_hooks_AntiDetection_antiNativeDetections(JNIEn
     if (hook_function == nullptr) return false;
     hook_function((void*) __system_property_get, (void *)fake_system_property_get, (void **) &backup_system_property_get);
     hook_function((void*) fopen, (void*) fake_fopen, (void**) &backup_fopen);
+    // memcmp hook 已禁用（越界读取风险 + 高频热路径性能开销）
     //hook_function((void*) strstr, (void*) fake_strstr, (void**) &backup_strstr);
-    hook_function((void*) memcmp, (void*) fake_memcmp, (void**) &backup_memcmp);
+    //hook_function((void*) memcmp, (void*) fake_memcmp, (void**) &backup_memcmp);
 
     return true;
 }
